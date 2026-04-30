@@ -111,11 +111,13 @@ export function RechargeFormCard({
     }
   }
 
+  const hasLinkMethod = topupInfo?.pay_methods?.some((m) => m.url)
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
     enableWaffoTopup ||
-    enableWaffoPancakeTopup
+    enableWaffoPancakeTopup ||
+    hasLinkMethod
   const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
   const hasStandardPaymentMethods =
     Array.isArray(topupInfo?.pay_methods) && topupInfo.pay_methods.length > 0
@@ -307,18 +309,29 @@ export function RechargeFormCard({
                   {hasStandardPaymentMethods ? (
                     <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
                       {topupInfo?.pay_methods?.map((method) => {
+                        const isLinkMethod = !!method.url
                         const minTopup = method.min_topup || 0
-                        const disabled = minTopup > topupAmount
+                        const disabled = !isLinkMethod && minTopup > topupAmount
+
+                        const handleClick = () => {
+                          if (isLinkMethod) {
+                            const targetUrl =
+                              method.urls?.[String(topupAmount)] || method.url
+                            window.open(targetUrl, '_blank', 'noopener,noreferrer')
+                          } else {
+                            onPaymentMethodSelect(method)
+                          }
+                        }
 
                         const button = (
                           <Button
                             key={method.type}
                             variant='outline'
-                            onClick={() => onPaymentMethodSelect(method)}
-                            disabled={disabled || !!paymentLoading}
+                            onClick={handleClick}
+                            disabled={disabled || (!isLinkMethod && !!paymentLoading)}
                             className='justify-start gap-2 rounded-lg'
                           >
-                            {paymentLoading === method.type ? (
+                            {!isLinkMethod && paymentLoading === method.type ? (
                               <Loader2 className='h-4 w-4 animate-spin' />
                             ) : (
                               getPaymentIcon(
@@ -329,6 +342,9 @@ export function RechargeFormCard({
                               )
                             )}
                             {method.name}
+                            {isLinkMethod && (
+                              <ExternalLink className='h-3 w-3' />
+                            )}
                           </Button>
                         )
 

@@ -77,6 +77,10 @@ export interface PaymentMethod {
   min_topup?: number
   /** Optional icon URL provided by backend (preferred over built-in icons) */
   icon?: string
+  /** 外链默认地址，有此字段时点击按钮直接跳转而非走支付 API */
+  url?: string
+  /** 金额→链接映射，优先匹配当前充值金额对应的链接，未匹配则回退到 url */
+  urls?: Record<string, string>
 }
 
 /**

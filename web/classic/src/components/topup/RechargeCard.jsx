@@ -106,6 +106,8 @@ const RechargeCard = ({
     !subscriptionLoading && subscriptionPlans.length > 0;
   const regularPayMethods = payMethods || [];
 
+  const hasLinkMethod = regularPayMethods.some((m) => m.url);
+
   useEffect(() => {
     if (initialTabSetRef.current) return;
     if (subscriptionLoading) return;
@@ -231,7 +233,8 @@ const RechargeCard = ({
           enableStripeTopUp ||
           enableCreemTopUp ||
           enableWaffoTopUp ||
-          enableWaffoPancakeTopUp ? (
+          enableWaffoPancakeTopUp ||
+          hasLinkMethod ? (
           <Form
             getFormApi={(api) => (onlineFormApiRef.current = api)}
             initValues={{ topUpCount: topUpCount }}
@@ -240,7 +243,8 @@ const RechargeCard = ({
               {(enableOnlineTopUp ||
                 enableStripeTopUp ||
                 enableWaffoTopUp ||
-                enableWaffoPancakeTopUp) && (
+                enableWaffoPancakeTopUp ||
+                hasLinkMethod) && (
                 <Row gutter={12}>
                   <Col xs={24} sm={24} md={24} lg={10} xl={10}>
                     <Form.InputNumber
@@ -250,7 +254,8 @@ const RechargeCard = ({
                         !enableOnlineTopUp &&
                         !enableStripeTopUp &&
                         !enableWaffoTopUp &&
-                        !enableWaffoPancakeTopUp
+                        !enableWaffoPancakeTopUp &&
+                        !hasLinkMethod
                       }
                       placeholder={
                         t('充值数量，最低 ') + renderQuotaWithAmount(minTopUp)
@@ -308,6 +313,7 @@ const RechargeCard = ({
                       <Form.Slot label={t('选择支付方式')}>
                         <Space wrap>
                           {regularPayMethods.map((payMethod) => {
+                            const isLinkMethod = !!payMethod.url;
                             const minTopupVal =
                               Number(payMethod.min_topup) || 0;
                             const isStripe = payMethod.type === 'stripe';
@@ -316,25 +322,36 @@ const RechargeCard = ({
                               payMethod.type.startsWith('waffo:');
                             const isWaffoPancake =
                               payMethod.type === 'waffo_pancake';
-                            const disabled =
-                              (!enableOnlineTopUp &&
-                                !isStripe &&
-                                !isWaffo &&
-                                !isWaffoPancake) ||
-                              (!enableStripeTopUp && isStripe) ||
-                              (!enableWaffoTopUp && isWaffo) ||
-                              (!enableWaffoPancakeTopUp && isWaffoPancake) ||
-                              minTopupVal > Number(topUpCount || 0);
+                            const disabled = isLinkMethod
+                              ? false
+                              : (!enableOnlineTopUp &&
+                                  !isStripe &&
+                                  !isWaffo &&
+                                  !isWaffoPancake) ||
+                                (!enableStripeTopUp && isStripe) ||
+                                (!enableWaffoTopUp && isWaffo) ||
+                                (!enableWaffoPancakeTopUp && isWaffoPancake) ||
+                                minTopupVal > Number(topUpCount || 0);
+
+                            const handleClick = () => {
+                              if (isLinkMethod) {
+                                const targetUrl =
+                                  payMethod.urls?.[String(topUpCount)] || payMethod.url;
+                                window.open(targetUrl, '_blank', 'noopener,noreferrer');
+                              } else {
+                                preTopUp(payMethod.type);
+                              }
+                            };
 
                             const buttonEl = (
                               <Button
                                 key={payMethod.type}
                                 theme='outline'
                                 type='tertiary'
-                                onClick={() => preTopUp(payMethod.type)}
+                                onClick={handleClick}
                                 disabled={disabled}
                                 loading={
-                                  paymentLoading && payWay === payMethod.type
+                                  !isLinkMethod && paymentLoading && payWay === payMethod.type
                                 }
                                 icon={
                                   payMethod.type === 'alipay' ? (
@@ -399,7 +416,7 @@ const RechargeCard = ({
                 </Row>
               )}
 
-              {(enableOnlineTopUp || enableStripeTopUp || enableWaffoTopUp) && (
+              {(enableOnlineTopUp || enableStripeTopUp || enableWaffoTopUp || hasLinkMethod) && (
                 <Form.Slot
                   label={
                     <div className='flex items-center gap-2'>
