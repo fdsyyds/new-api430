@@ -38,7 +38,7 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 
 		if !hasStripe {
-			stripeMethod := map[string]string{
+			stripeMethod := map[string]interface{}{
 				"name":      "Stripe",
 				"type":      "stripe",
 				"color":     "rgba(var(--semi-purple-5), 1)",
@@ -60,7 +60,7 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 
 		if !hasWaffo {
-			waffoMethod := map[string]string{
+			waffoMethod := map[string]interface{}{
 				"name":      "Waffo (Global Payment)",
 				"type":      model.PaymentMethodWaffo,
 				"color":     "rgba(var(--semi-blue-5), 1)",
@@ -81,7 +81,7 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 
 		if !hasWaffoPancake {
-			payMethods = append(payMethods, map[string]string{
+			payMethods = append(payMethods, map[string]interface{}{
 				"name":      "Waffo Pancake",
 				"type":      model.PaymentMethodWaffoPancake,
 				"color":     "rgba(var(--semi-orange-5), 1)",

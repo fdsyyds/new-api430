@@ -155,7 +155,7 @@ func TestEpayWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	operation_setting.PayAddress = "https://pay.example.com"
 	operation_setting.EpayId = "epay_id"
 	operation_setting.EpayKey = ""
-	operation_setting.PayMethods = []map[string]string{{"type": "alipay"}}
+	operation_setting.PayMethods = []map[string]interface{}{{"type": "alipay"}}
 	require.False(t, isEpayWebhookEnabled())
 
 	operation_setting.EpayKey = "epay_key"

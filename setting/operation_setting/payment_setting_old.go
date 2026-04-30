@@ -17,7 +17,7 @@ var Price = 7.3
 var MinTopUp = 1
 var USDExchangeRate = 7.3
 
-var PayMethods = []map[string]string{
+var PayMethods = []map[string]interface{}{
 	{
 		"name":  "支付宝",
 		"color": "rgba(var(--semi-blue-5), 1)",
@@ -37,7 +37,7 @@ var PayMethods = []map[string]string{
 }
 
 func UpdatePayMethodsByJsonString(jsonString string) error {
-	PayMethods = make([]map[string]string, 0)
+	PayMethods = make([]map[string]interface{}, 0)
 	return common.Unmarshal([]byte(jsonString), &PayMethods)
 }
 
