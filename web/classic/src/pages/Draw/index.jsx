@@ -118,7 +118,7 @@ const Draw = () => {
   }, []);
 
   return (
-    <div className='flex gap-4 p-4' style={{ height: 'calc(100vh - 60px)' }}>
+    <div className='mt-[60px] flex gap-4 p-4' style={{ height: 'calc(100vh - 60px)' }}>
       {/* 左侧控制面板 */}
       <Card className='w-80 shrink-0 overflow-y-auto'>
         <Title heading={5} className='mb-4'>{t('绘图功能')}</Title>
