@@ -526,6 +526,20 @@ func GetUserModels(c *gin.Context) {
 		return
 	}
 	groups := service.GetUserUsableGroups(user.Group)
+	selectedGroup := c.Query("group")
+	if selectedGroup != "" {
+		if _, ok := groups[selectedGroup]; !ok {
+			common.ApiErrorMsg(c, "group is not available")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    model.GetGroupEnabledModels(selectedGroup),
+		})
+		return
+	}
+
 	var models []string
 	for group := range groups {
 		for _, g := range model.GetGroupEnabledModels(group) {

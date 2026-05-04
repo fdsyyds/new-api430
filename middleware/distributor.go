@@ -325,7 +325,9 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		c.Set("relay_mode", relayMode)
 	}
-	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") ||
+		strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") ||
+		strings.HasPrefix(c.Request.URL.Path, "/pg/images/edits") {
 		// playground routes
 		req, err := getModelFromRequest(c)
 		if err != nil {

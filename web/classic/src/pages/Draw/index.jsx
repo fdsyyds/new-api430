@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
   TextArea,
   Select,
-  InputNumber,
   Card,
   Typography,
   Spin,
@@ -26,10 +25,19 @@ const SIZE_OPTIONS = [
 ];
 
 const QUALITY_OPTIONS = ['high', 'medium', 'low', 'auto'];
-const DRAW_HISTORY_LIMIT = 30;
+const DRAW_HISTORY_LIMIT = 5;
+const DRAW_GENERATION_COUNT = 1;
+const MAX_CONCURRENT_GENERATIONS = 3;
 const DRAW_HISTORY_DB = 'new-api-classic-draw-history';
 const DRAW_HISTORY_STORE = 'records';
 const DRAW_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp';
+
+function toModelOptions(models) {
+  return (Array.isArray(models) ? models : []).map((item) => ({
+    label: item,
+    value: item,
+  }));
+}
 
 function getCurrentUserId() {
   return localStorage.getItem('uid') || 'anonymous';
@@ -86,21 +94,55 @@ async function loadHistory(userId) {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+function getRecordImageCount(record) {
+  return Math.max(1, Array.isArray(record.images) ? record.images.length : 0);
+}
+
+async function trimHistory(userId) {
+  const records = await loadHistory(userId);
+  const recordsToDelete = [];
+  const recordsToUpdate = [];
+  let imageCount = 0;
+
+  records.forEach((record) => {
+    const recordImageCount = getRecordImageCount(record);
+    const remaining = DRAW_HISTORY_LIMIT - imageCount;
+
+    if (remaining <= 0) {
+      recordsToDelete.push(record);
+      return;
+    }
+
+    if (recordImageCount > remaining) {
+      recordsToUpdate.push({
+        ...record,
+        images: Array.isArray(record.images)
+          ? record.images.slice(0, remaining)
+          : record.images,
+      });
+      imageCount = DRAW_HISTORY_LIMIT;
+      return;
+    }
+
+    imageCount += recordImageCount;
+  });
+
+  if (recordsToDelete.length > 0 || recordsToUpdate.length > 0) {
+    await withHistoryStore('readwrite', (store) => {
+      recordsToDelete.forEach((item) => store.delete(item.id));
+      recordsToUpdate.forEach((item) => store.put(item));
+    });
+  }
+
+  return loadHistory(userId);
+}
+
 async function saveHistory(record) {
   await withHistoryStore('readwrite', (store) => {
     store.put(record);
   });
 
-  const records = await loadHistory(record.userId);
-  const staleRecords = records.slice(DRAW_HISTORY_LIMIT);
-
-  if (staleRecords.length > 0) {
-    await withHistoryStore('readwrite', (store) => {
-      staleRecords.forEach((item) => store.delete(item.id));
-    });
-  }
-
-  return loadHistory(record.userId);
+  return trimHistory(record.userId);
 }
 
 async function deleteHistoryItem(id, userId) {
@@ -108,7 +150,7 @@ async function deleteHistoryItem(id, userId) {
     store.delete(id);
   });
 
-  return loadHistory(userId);
+  return trimHistory(userId);
 }
 
 async function clearUserHistory(userId) {
@@ -147,47 +189,124 @@ function getImageSource(item) {
   return item.b64_json ? `data:image/png;base64,${item.b64_json}` : item.url || '';
 }
 
+function toDisplayItems(images, idPrefix) {
+  return (Array.isArray(images) ? images : [])
+    .slice(0, MAX_CONCURRENT_GENERATIONS)
+    .map((image, index) => ({
+      id: `${idPrefix}-${index}`,
+      status: 'done',
+      image,
+    }));
+}
+
+function appendGenerationItem(current, newItem) {
+  const next = [...current, newItem];
+  if (next.length <= MAX_CONCURRENT_GENERATIONS) return next;
+
+  const loadingItems = next.filter((item) => item.status === 'loading');
+  const remainingSlots = Math.max(
+    0,
+    MAX_CONCURRENT_GENERATIONS - loadingItems.length,
+  );
+  const keptDoneItems =
+    remainingSlots > 0
+      ? next.filter((item) => item.status !== 'loading').slice(-remainingSlots)
+      : [];
+  const keptIds = new Set(
+    [...loadingItems, ...keptDoneItems].map((item) => item.id),
+  );
+
+  return next.filter((item) => keptIds.has(item.id));
+}
+
 const Draw = () => {
   const { t } = useTranslation();
   const userId = getCurrentUserId();
   const [mode, setMode] = useState('generate');
-  const [models, setModels] = useState([]);
   const [groups, setGroups] = useState([]);
-  const [model, setModel] = useState('gpt-image-1');
+  const [drawGroup, setDrawGroup] = useState('');
+  const [drawModels, setDrawModels] = useState([]);
+  const [drawModel, setDrawModel] = useState('');
+  const [polishGroup, setPolishGroup] = useState('');
+  const [polishModels, setPolishModels] = useState([]);
   const [polishModel, setPolishModel] = useState('');
-  const [group, setGroup] = useState('GPT');
   const [prompt, setPrompt] = useState('');
   const [size, setSize] = useState('1024x1024');
   const [quality, setQuality] = useState('auto');
-  const [n, setN] = useState(1);
   const [sourceImages, setSourceImages] = useState([]);
-  const [images, setImages] = useState([]);
+  const [generationItems, setGenerationItems] = useState([]);
   const [history, setHistory] = useState([]);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [activeGenerationCount, setActiveGenerationCount] = useState(0);
   const [isPolishing, setIsPolishing] = useState(false);
   const [error, setError] = useState(null);
+  const activeGenerationCountRef = useRef(0);
 
-  const preferredPolishModel = useMemo(() => {
-    const textModel = models.find((item) => !isLikelyImageModel(item.value));
-    return textModel?.value || models[0]?.value || '';
-  }, [models]);
+  const groupOptions = useMemo(
+    () =>
+      groups.map((item) => ({
+        ...item,
+        label: item.desc ? `${item.value} · ${item.desc}` : item.label,
+      })),
+    [groups],
+  );
+
+  const previewGridClass = useMemo(() => {
+    if (generationItems.length === 1) return 'grid min-h-full place-items-center';
+    if (generationItems.length === 2) {
+      return 'grid min-h-full grid-cols-1 items-center gap-4 md:grid-cols-2';
+    }
+    return 'grid min-h-full grid-cols-1 items-center gap-4 md:grid-cols-3';
+  }, [generationItems.length]);
+
+  const previewItemClass = useMemo(
+    () =>
+      generationItems.length === 1 ? 'w-full max-w-3xl' : 'w-full',
+    [generationItems.length],
+  );
+
+  const generateButtonText = useMemo(() => {
+    if (activeGenerationCount >= MAX_CONCURRENT_GENERATIONS) {
+      return t('最多同时生成3张');
+    }
+    return mode === 'edit' ? t('以图生成') : t('生成图片');
+  }, [activeGenerationCount, mode, t]);
+
+  const loadGroupModels = useCallback(
+    async (selectedGroup, setOptions, setSelectedModel, preferTextModel = false) => {
+      if (!selectedGroup) {
+        setOptions([]);
+        setSelectedModel('');
+        return;
+      }
+
+      const res = await API.get(
+        `/api/user/models?group=${encodeURIComponent(selectedGroup)}`,
+      );
+
+      if (!res.data.success || !Array.isArray(res.data.data)) {
+        setOptions([]);
+        setSelectedModel('');
+        return;
+      }
+
+      const options = toModelOptions(res.data.data);
+      setOptions(options);
+      setSelectedModel((current) => {
+        if (options.some((item) => item.value === current)) return current;
+        if (preferTextModel) {
+          return (
+            options.find((item) => !isLikelyImageModel(item.value))?.value ||
+            options[0]?.value ||
+            ''
+          );
+        }
+        return options[0]?.value || '';
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
-    API.get('/api/user/models').then((res) => {
-      if (res.data.success && Array.isArray(res.data.data)) {
-        const modelOptions = res.data.data.map((item) => ({
-          label: item,
-          value: item,
-        }));
-        setModels(modelOptions);
-        setModel((current) =>
-          modelOptions.find((item) => item.value === current)
-            ? current
-            : modelOptions[0]?.value || 'gpt-image-1',
-        );
-      }
-    });
-
     API.get('/api/user/self/groups').then((res) => {
       if (res.data.success && res.data.data) {
         const groupList = Object.entries(res.data.data).map(([name, info]) => ({
@@ -196,32 +315,31 @@ const Draw = () => {
           desc: info.desc,
         }));
         setGroups(groupList);
-        setGroup((current) =>
-          groupList.find((item) => item.value === current)
-            ? current
-            : groupList[0]?.value || 'GPT',
-        );
       }
     });
   }, []);
 
   useEffect(() => {
-    loadHistory(userId)
+    loadGroupModels(drawGroup, setDrawModels, setDrawModel);
+  }, [drawGroup, loadGroupModels]);
+
+  useEffect(() => {
+    loadGroupModels(polishGroup, setPolishModels, setPolishModel, true);
+  }, [loadGroupModels, polishGroup]);
+
+  useEffect(() => {
+    trimHistory(userId)
       .then((records) => {
         setHistory(records);
-        setImages(records[0]?.images || []);
+        setGenerationItems(
+          toDisplayItems(records[0]?.images || [], records[0]?.id || 'history'),
+        );
       })
       .catch(() => setHistory([]));
   }, [userId]);
 
-  useEffect(() => {
-    if (!polishModel && preferredPolishModel) {
-      setPolishModel(preferredPolishModel);
-    }
-  }, [polishModel, preferredPolishModel]);
-
   const handlePolishPrompt = useCallback(async () => {
-    if (!prompt.trim() || !polishModel) return;
+    if (!prompt.trim() || !polishGroup || !polishModel) return;
 
     setIsPolishing(true);
 
@@ -230,7 +348,7 @@ const Draw = () => {
         '/pg/chat/completions',
         {
           model: polishModel,
-          group,
+          group: polishGroup,
           messages: [
             {
               role: 'system',
@@ -257,18 +375,34 @@ const Draw = () => {
     } finally {
       setIsPolishing(false);
     }
-  }, [group, polishModel, prompt, t]);
+  }, [polishGroup, polishModel, prompt, t]);
 
   const handleSubmit = useCallback(async () => {
-    if (!prompt.trim() || !model) return;
+    if (!prompt.trim() || !drawGroup || !drawModel) return;
     if (mode === 'edit' && sourceImages.length === 0) {
       setError(t('请至少选择一张参考图片'));
       return;
     }
+    if (activeGenerationCountRef.current >= MAX_CONCURRENT_GENERATIONS) {
+      Toast.warning(t('最多同时生成3张图片'));
+      return;
+    }
 
-    setIsGenerating(true);
+    const taskId = createHistoryId();
+    const promptText = prompt.trim();
+    const sourceImageNames = sourceImages.map((image) => image.name);
+
+    activeGenerationCountRef.current += 1;
+    setActiveGenerationCount(activeGenerationCountRef.current);
     setError(null);
-    setImages([]);
+    setGenerationItems((current) =>
+      appendGenerationItem(current, {
+        id: taskId,
+        status: 'loading',
+        prompt: promptText,
+        createdAt: Date.now(),
+      }),
+    );
 
     try {
       const requestConfig = { timeout: 300000 };
@@ -278,12 +412,12 @@ const Draw = () => {
               '/pg/images/edits',
               (() => {
                 const formData = new FormData();
-                formData.append('model', model);
-                formData.append('prompt', prompt.trim());
-                formData.append('n', String(n));
+                formData.append('model', drawModel);
+                formData.append('prompt', promptText);
+                formData.append('n', String(DRAW_GENERATION_COUNT));
                 formData.append('size', size);
                 formData.append('quality', quality);
-                formData.append('group', group);
+                formData.append('group', drawGroup);
                 formData.append('response_format', 'b64_json');
                 const field = sourceImages.length > 1 ? 'image[]' : 'image';
                 sourceImages.forEach((image) => formData.append(field, image));
@@ -294,12 +428,12 @@ const Draw = () => {
           : await API.post(
               '/pg/images/generations',
               {
-                model,
-                prompt: prompt.trim(),
-                n,
+                model: drawModel,
+                prompt: promptText,
+                n: DRAW_GENERATION_COUNT,
                 size,
                 quality,
-                group,
+                group: drawGroup,
                 response_format: 'b64_json',
               },
               requestConfig,
@@ -309,29 +443,39 @@ const Draw = () => {
       if (data.error) {
         const msg =
           typeof data.error === 'object' ? data.error.message : String(data.error);
-        setError(msg || t('生成失败'));
-        return;
+        throw new Error(msg || t('生成失败'));
       }
       if (!data.data || data.data.length === 0) {
-        setError(t('未返回图片'));
-        return;
+        throw new Error(t('未返回图片'));
       }
 
-      setImages(data.data);
+      const resultImages = data.data.slice(0, DRAW_GENERATION_COUNT);
+      setGenerationItems((current) =>
+        current.map((item) =>
+          item.id === taskId
+            ? {
+                ...item,
+                status: 'done',
+                image: resultImages[0],
+              }
+            : item,
+        ),
+      );
+
       try {
         const records = await saveHistory({
-          id: createHistoryId(),
+          id: taskId,
           userId,
           createdAt: Date.now(),
           mode,
-          model,
-          group,
-          prompt: prompt.trim(),
+          model: drawModel,
+          group: drawGroup,
+          prompt: promptText,
           size,
           quality,
-          n,
-          images: data.data,
-          sourceImageNames: sourceImages.map((image) => image.name),
+          n: DRAW_GENERATION_COUNT,
+          images: resultImages,
+          sourceImageNames,
         });
         setHistory(records);
       } catch {
@@ -343,11 +487,26 @@ const Draw = () => {
         err?.response?.data?.error?.message ||
         err?.message ||
         t('生成失败');
-      setError(msg);
+      setGenerationItems((current) =>
+        current.map((item) =>
+          item.id === taskId
+            ? {
+                ...item,
+                status: 'error',
+                error: msg,
+              }
+            : item,
+        ),
+      );
+      Toast.error(msg);
     } finally {
-      setIsGenerating(false);
+      activeGenerationCountRef.current = Math.max(
+        0,
+        activeGenerationCountRef.current - 1,
+      );
+      setActiveGenerationCount(activeGenerationCountRef.current);
     }
-  }, [group, mode, model, n, prompt, quality, size, sourceImages, t, userId]);
+  }, [drawGroup, drawModel, mode, prompt, quality, size, sourceImages, t, userId]);
 
   const handleDownload = useCallback((item, index) => {
     if (item.b64_json) {
@@ -367,6 +526,11 @@ const Draw = () => {
     setHistory([]);
   }, [t, userId]);
 
+  const handleOpenHistoryRecord = useCallback((record) => {
+    setError(null);
+    setGenerationItems(toDisplayItems(record.images, record.id));
+  }, []);
+
   const handleDeleteHistory = useCallback(
     async (id) => {
       const records = await deleteHistoryItem(id, userId);
@@ -376,7 +540,7 @@ const Draw = () => {
   );
 
   return (
-    <div className='mt-[60px] grid gap-4 p-4 lg:grid-cols-[22rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
+    <div className='mt-[60px] grid gap-4 p-4 lg:grid-cols-[32rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
       <Card className='min-h-0 overflow-y-auto'>
         <Title heading={5} className='mb-4'>
           {t('绘图功能')}
@@ -396,40 +560,66 @@ const Draw = () => {
             />
           </div>
 
-          <div>
-            <Text className='mb-1 block text-sm font-medium'>{t('分组')}</Text>
-            <Select
-              value={group}
-              onChange={setGroup}
-              optionList={groups}
-              placeholder={t('选择分组')}
-              style={{ width: '100%' }}
-              filter
-            />
+          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2'>
+            <Text className='pb-2 text-sm font-medium'>{t('生图模型')}</Text>
+            <div className='min-w-0'>
+              <Text className='mb-1 block text-xs text-gray-500'>{t('分组选择')}</Text>
+              <Select
+                value={drawGroup}
+                onChange={(value) => {
+                  setDrawGroup(value);
+                  setDrawModels([]);
+                  setDrawModel('');
+                }}
+                optionList={groupOptions}
+                placeholder={t('选择分组')}
+                style={{ width: '100%' }}
+                filter
+              />
+            </div>
+            <div className='min-w-0'>
+              <Text className='mb-1 block text-xs text-gray-500'>{t('模型选择')}</Text>
+              <Select
+                value={drawModel}
+                onChange={setDrawModel}
+                optionList={drawModels}
+                placeholder={drawGroup ? t('选择模型') : t('请选择分组')}
+                style={{ width: '100%' }}
+                disabled={!drawGroup}
+                filter
+              />
+            </div>
           </div>
 
-          <div>
-            <Text className='mb-1 block text-sm font-medium'>{t('模型')}</Text>
-            <Select
-              value={model}
-              onChange={setModel}
-              optionList={models}
-              placeholder={t('选择模型')}
-              style={{ width: '100%' }}
-              filter
-            />
-          </div>
-
-          <div>
-            <Text className='mb-1 block text-sm font-medium'>{t('提示词模型')}</Text>
-            <Select
-              value={polishModel}
-              onChange={setPolishModel}
-              optionList={models}
-              placeholder={t('选择模型')}
-              style={{ width: '100%' }}
-              filter
-            />
+          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2'>
+            <Text className='pb-2 text-sm font-medium'>{t('提示词模型')}</Text>
+            <div className='min-w-0'>
+              <Text className='mb-1 block text-xs text-gray-500'>{t('分组选择')}</Text>
+              <Select
+                value={polishGroup}
+                onChange={(value) => {
+                  setPolishGroup(value);
+                  setPolishModels([]);
+                  setPolishModel('');
+                }}
+                optionList={groupOptions}
+                placeholder={t('选择分组')}
+                style={{ width: '100%' }}
+                filter
+              />
+            </div>
+            <div className='min-w-0'>
+              <Text className='mb-1 block text-xs text-gray-500'>{t('模型选择')}</Text>
+              <Select
+                value={polishModel}
+                onChange={setPolishModel}
+                optionList={polishModels}
+                placeholder={polishGroup ? t('选择模型') : t('请选择分组')}
+                style={{ width: '100%' }}
+                disabled={!polishGroup}
+                filter
+              />
+            </div>
           </div>
 
           <div>
@@ -439,7 +629,7 @@ const Draw = () => {
                 size='small'
                 icon={<WandSparkles size={14} />}
                 loading={isPolishing}
-                disabled={!prompt.trim() || !polishModel}
+                disabled={!prompt.trim() || !polishGroup || !polishModel}
                 onClick={handlePolishPrompt}
               >
                 {t('润色提示词')}
@@ -517,87 +707,172 @@ const Draw = () => {
           </div>
 
           <div>
-            <Text className='mb-1 block text-sm font-medium'>{t('数量')}</Text>
-            <InputNumber
-              value={n}
-              onChange={setN}
-              min={1}
-              max={4}
-              style={{ width: '100%' }}
-            />
+            <Button
+              theme='solid'
+              type='primary'
+              block
+              disabled={
+                !prompt.trim() ||
+                !drawGroup ||
+                !drawModel ||
+                activeGenerationCount >= MAX_CONCURRENT_GENERATIONS ||
+                (mode === 'edit' && sourceImages.length === 0)
+              }
+              onClick={handleSubmit}
+            >
+              {generateButtonText}
+            </Button>
+            {activeGenerationCount > 0 && (
+              <Text className='mt-2 block text-xs' type='tertiary'>
+                {t('正在生成')} {activeGenerationCount}/{MAX_CONCURRENT_GENERATIONS}
+                {'，'}
+                {t('可继续点击直到同时生成3张图片')}
+              </Text>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <Card className='min-h-0 overflow-hidden'>
+        <div className='flex h-full min-h-0 flex-col'>
+          <div className='mb-4 flex flex-col gap-3 border-b pb-3 xl:flex-row xl:items-start xl:justify-between'>
+            <div>
+              <Title heading={5} className='mb-1'>
+                {t('生成预览')}
+              </Title>
+              <Text type='tertiary'>
+                {t('最多同时生成3张图片')}
+              </Text>
+            </div>
+
+            <div className='w-full xl:w-[24rem]'>
+              <div className='mb-1 flex items-center justify-between'>
+                <Text strong>{t('历史记录')}</Text>
+                <Button
+                  size='small'
+                  type='tertiary'
+                  icon={<Trash2 size={14} />}
+                  disabled={history.length === 0}
+                  onClick={handleClearHistory}
+                >
+                  {t('清空历史')}
+                </Button>
+              </div>
+              <Text className='mb-2 block text-xs' type='tertiary'>
+                {t('历史记录只保存最近5张图片，多余图片会自动删除')}
+              </Text>
+              {history.length === 0 ? (
+                <div className='rounded border border-dashed p-3 text-center'>
+                  <Text type='tertiary'>{t('暂无保存图片')}</Text>
+                </div>
+              ) : (
+                <div className='flex max-h-40 flex-col gap-2 overflow-y-auto pr-1'>
+                  {history.map((record) => {
+                    const src = getImageSource(record.images?.[0]);
+                    return (
+                      <div key={record.id} className='rounded border p-2'>
+                        <div className='flex gap-2'>
+                          <button
+                            type='button'
+                            className='size-14 shrink-0 overflow-hidden rounded border bg-gray-50'
+                            onClick={() => handleOpenHistoryRecord(record)}
+                          >
+                            {src ? (
+                              <img src={src} alt='' className='size-full object-cover' />
+                            ) : (
+                              <ImageIcon size={20} />
+                            )}
+                          </button>
+                          <button
+                            type='button'
+                            className='min-w-0 flex-1 text-left text-xs'
+                            onClick={() => handleOpenHistoryRecord(record)}
+                          >
+                            <div className='mb-1 text-[11px] text-gray-500'>
+                              {record.mode === 'edit' ? t('图生图') : t('文生图')}
+                              {' · '}
+                              {new Date(record.createdAt).toLocaleString()}
+                            </div>
+                            <div className='line-clamp-2'>{record.prompt}</div>
+                          </button>
+                          <Button
+                            size='small'
+                            type='tertiary'
+                            icon={<Trash2 size={14} />}
+                            onClick={() => handleDeleteHistory(record.id)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
-          <Button
-            theme='solid'
-            type='primary'
-            block
-            loading={isGenerating}
-            disabled={!prompt.trim() || (mode === 'edit' && sourceImages.length === 0)}
-            onClick={handleSubmit}
-          >
-            {mode === 'edit' ? t('以图生成') : t('生成图片')}
-          </Button>
-
-          <div className='border-t pt-4'>
-            <div className='mb-2 flex items-center justify-between'>
-              <Text strong>{t('历史记录')}</Text>
-              <Button
-                size='small'
-                type='tertiary'
-                icon={<Trash2 size={14} />}
-                disabled={history.length === 0}
-                onClick={handleClearHistory}
-              >
-                {t('清空历史')}
-              </Button>
-            </div>
-            {history.length === 0 ? (
-              <div className='rounded border border-dashed p-4 text-center'>
-                <Text type='tertiary'>{t('暂无保存图片')}</Text>
+          <div className='min-h-0 flex-1 overflow-y-auto'>
+            {error && (
+              <div className='mb-3 rounded border border-red-200 bg-red-50 p-3'>
+                <Text type='danger'>{error}</Text>
               </div>
-            ) : (
-              <div className='flex max-h-72 flex-col gap-2 overflow-y-auto pr-1'>
-                {history.map((record) => {
-                  const src = getImageSource(record.images[0]);
+            )}
+
+            {generationItems.length === 0 && (
+              <div className='flex h-full min-h-[28rem] flex-col items-center justify-center gap-3 text-gray-400'>
+                <ImageIcon size={64} strokeWidth={1} />
+                <Text type='tertiary'>{t('生成的图片将显示在这里')}</Text>
+              </div>
+            )}
+
+            {generationItems.length > 0 && (
+              <div className={previewGridClass}>
+                {generationItems.map((item, index) => {
+                  const src = getImageSource(item.image);
                   return (
-                    <div key={record.id} className='rounded border p-2'>
-                      <div className='flex gap-2'>
-                        <button
-                          type='button'
-                          className='size-14 shrink-0 overflow-hidden rounded border bg-gray-50'
-                          onClick={() => {
-                            setError(null);
-                            setImages(record.images);
-                          }}
-                        >
-                          {src ? (
-                            <img src={src} alt='' className='size-full object-cover' />
-                          ) : (
-                            <ImageIcon size={20} />
-                          )}
-                        </button>
-                        <button
-                          type='button'
-                          className='min-w-0 flex-1 text-left text-xs'
-                          onClick={() => {
-                            setError(null);
-                            setImages(record.images);
-                          }}
-                        >
-                          <div className='mb-1 text-[11px] text-gray-500'>
-                            {record.mode === 'edit' ? t('图生图') : t('文生图')}
-                            {' · '}
-                            {new Date(record.createdAt).toLocaleString()}
+                    <div
+                      key={item.id}
+                      className={`${previewItemClass} group relative overflow-hidden rounded-lg border bg-white`}
+                    >
+                      {item.status === 'loading' && (
+                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-3 bg-gray-50 px-4 text-center'>
+                          <Spin size='large' />
+                          <Text type='tertiary'>
+                            {t('生成图片时间约为1-2分钟请耐心等待')}
+                          </Text>
+                        </div>
+                      )}
+
+                      {item.status === 'error' && (
+                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-2 bg-red-50 px-4 text-center'>
+                          <Text type='danger'>{item.error || t('生成失败')}</Text>
+                        </div>
+                      )}
+
+                      {item.status === 'done' && (
+                        <>
+                          <img
+                            src={src}
+                            alt={`Generated ${index + 1}`}
+                            className='w-full object-contain'
+                          />
+                          <div className='absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100'>
+                            <Button
+                              size='small'
+                              icon={<Download size={14} />}
+                              onClick={() => handleDownload(item.image, index)}
+                            >
+                              {t('下载')}
+                            </Button>
                           </div>
-                          <div className='line-clamp-2'>{record.prompt}</div>
-                        </button>
-                        <Button
-                          size='small'
-                          type='tertiary'
-                          icon={<Trash2 size={14} />}
-                          onClick={() => handleDeleteHistory(record.id)}
-                        />
-                      </div>
+                          {item.image?.revised_prompt && (
+                            <div className='border-t bg-white/80 p-2'>
+                              <Text size='small' type='tertiary'>
+                                {item.image.revised_prompt}
+                              </Text>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -605,56 +880,6 @@ const Draw = () => {
             )}
           </div>
         </div>
-      </Card>
-
-      <Card className='min-h-0 overflow-y-auto'>
-        {error && (
-          <div className='flex h-full items-center justify-center'>
-            <Text type='danger'>{error}</Text>
-          </div>
-        )}
-
-        {!error && images.length === 0 && (
-          <div className='flex h-full flex-col items-center justify-center gap-3 text-gray-400'>
-            {isGenerating ? (
-              <Spin size='large' />
-            ) : (
-              <>
-                <ImageIcon size={64} strokeWidth={1} />
-                <Text type='tertiary'>{t('生成的图片将显示在这里')}</Text>
-              </>
-            )}
-          </div>
-        )}
-
-        {images.length > 0 && (
-          <div className='grid grid-cols-1 gap-4 lg:grid-cols-2'>
-            {images.map((item, index) => {
-              const src = getImageSource(item);
-              return (
-                <div key={index} className='group relative overflow-hidden rounded-lg border'>
-                  <img src={src} alt={`Generated ${index + 1}`} className='w-full object-contain' />
-                  <div className='absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100'>
-                    <Button
-                      size='small'
-                      icon={<Download size={14} />}
-                      onClick={() => handleDownload(item, index)}
-                    >
-                      {t('下载')}
-                    </Button>
-                  </div>
-                  {item.revised_prompt && (
-                    <div className='border-t bg-white/80 p-2'>
-                      <Text size='small' type='tertiary'>
-                        {item.revised_prompt}
-                      </Text>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </Card>
     </div>
   );
