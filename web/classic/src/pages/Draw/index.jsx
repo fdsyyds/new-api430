@@ -1009,7 +1009,10 @@ const Draw = () => {
           </Button>
 
           {historyPanelOpen && (
-            <div className='absolute right-5 top-20 z-10 w-[24rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 text-[#111827] shadow-lg'>
+            <div
+              className='absolute right-5 top-20 z-10 w-[24rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 text-[#111827] shadow-lg'
+              style={{ backgroundColor: '#ffffff', color: '#111827' }}
+            >
               <div className='mb-1 flex items-center justify-between'>
                 <Text strong className='text-[#111827]'>{t('历史记录')}</Text>
                 <Button
@@ -1142,7 +1145,7 @@ const Draw = () => {
                             </Button>
                           </div>
                           {item.prompt && (
-                            <div className='border-t border-[#edf1f3] bg-white/90 p-3'>
+                            <div className='border-t border-[#edf1f3] bg-white p-3'>
                               <Text size='small' className='text-[#5d6b73]'>
                                 {item.prompt}
                               </Text>
@@ -1164,7 +1167,8 @@ const Draw = () => {
       visible={Boolean(imagePreviewRecord)}
       footer={null}
       width={960}
-      bodyStyle={{ background: '#f7fafb' }}
+      contentStyle={{ backgroundColor: '#ffffff' }}
+      bodyStyle={{ background: '#ffffff', color: '#111827' }}
       onCancel={() => setImagePreviewRecord(null)}
     >
       {imagePreviewRecord && (
@@ -1193,7 +1197,7 @@ const Draw = () => {
                       <ImageIcon size={48} strokeWidth={1} />
                     </div>
                   )}
-                  <div className='flex items-start justify-between gap-3 border-t border-[#edf1f3] bg-white/90 p-3'>
+                  <div className='flex items-start justify-between gap-3 border-t border-[#edf1f3] bg-white p-3'>
                     <Text size='small' className='text-[#5d6b73]'>
                       {item.prompt}
                     </Text>
