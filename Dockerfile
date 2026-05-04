@@ -23,6 +23,7 @@ COPY --from=frontend /build/dist ./web/classic/dist
 RUN go mod download
 
 COPY . .
+RUN mkdir -p web/default/dist && echo '<!DOCTYPE html><html><body>Use classic theme</body></html>' > web/default/dist/index.html
 RUN go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
 
 FROM debian:bookworm-slim@sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0f2837acbf89ab020a
