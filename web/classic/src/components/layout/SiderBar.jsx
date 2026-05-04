@@ -48,6 +48,7 @@ const routerMap = {
   models: '/console/models',
   deployment: '/console/deployment',
   playground: '/console/playground',
+  draw: '/console/draw',
   personal: '/console/personal',
 };
 
@@ -104,6 +105,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/task',
         className:
           localStorage.getItem('enable_task') === 'true' ? '' : 'tableHiddle',
+      },
+      {
+        text: t('绘图功能'),
+        itemKey: 'draw',
+        to: '/draw',
       },
     ];
 

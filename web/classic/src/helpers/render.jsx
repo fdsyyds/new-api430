@@ -80,6 +80,7 @@ import {
   Package,
   Server,
   CalendarClock,
+  Paintbrush,
 } from 'lucide-react';
 import {
   SiAtlassian,
@@ -135,6 +136,8 @@ export function getLucideIcon(key, selected = false) {
       return <ImageIcon {...commonProps} color={iconColor} />;
     case 'task':
       return <CheckSquare {...commonProps} color={iconColor} />;
+    case 'draw':
+      return <Paintbrush {...commonProps} color={iconColor} />;
     case 'topup':
       return <CreditCard {...commonProps} color={iconColor} />;
     case 'channel':
