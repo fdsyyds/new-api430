@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
@@ -33,6 +33,10 @@ const DRAW_HISTORY_DB = 'new-api-classic-draw-history';
 const DRAW_HISTORY_STORE = 'records';
 const DRAW_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp';
 const DRAW_SETTINGS_STORAGE_PREFIX = 'new-api-classic-draw-settings';
+const DEFAULT_DRAW_GROUP = 'GPT';
+const DEFAULT_DRAW_MODEL = 'gpt-image-2';
+const DEFAULT_POLISH_GROUP = 'GPT';
+const DEFAULT_POLISH_MODEL = 'gpt-5.5';
 
 function toModelOptions(models) {
   return (Array.isArray(models) ? models : []).map((item) => ({
@@ -70,7 +74,8 @@ function saveDrawSettings(userId, settings) {
 }
 
 function getSavedString(settings, key, fallback = '') {
-  return typeof settings?.[key] === 'string' ? settings[key] : fallback;
+  const value = settings?.[key];
+  return typeof value === 'string' && value ? value : fallback;
 }
 
 function getSavedMode(settings) {
@@ -264,6 +269,65 @@ function appendGenerationItem(current, newItem) {
   return next.filter((item) => keptIds.has(item.id));
 }
 
+const drawGenerationSession = {
+  activeGenerationCount: 0,
+  generationItems: [],
+  historyRecords: null,
+  listeners: new Set(),
+};
+
+function getDrawGenerationSnapshot() {
+  return {
+    activeGenerationCount: drawGenerationSession.activeGenerationCount,
+    generationItems: drawGenerationSession.generationItems,
+    historyRecords: drawGenerationSession.historyRecords,
+  };
+}
+
+function notifyDrawGenerationSession() {
+  const snapshot = getDrawGenerationSnapshot();
+  drawGenerationSession.listeners.forEach((listener) => listener(snapshot));
+}
+
+function subscribeDrawGenerationSession(listener) {
+  drawGenerationSession.listeners.add(listener);
+  listener(getDrawGenerationSnapshot());
+
+  return () => {
+    drawGenerationSession.listeners.delete(listener);
+  };
+}
+
+function setSessionGenerationItems(updater) {
+  drawGenerationSession.generationItems =
+    typeof updater === 'function'
+      ? updater(drawGenerationSession.generationItems)
+      : updater;
+  notifyDrawGenerationSession();
+}
+
+function setSessionActiveGenerationCount(count) {
+  drawGenerationSession.activeGenerationCount = Math.max(0, count);
+  notifyDrawGenerationSession();
+}
+
+function setSessionHistoryRecords(records) {
+  drawGenerationSession.historyRecords = records;
+  notifyDrawGenerationSession();
+}
+
+function incrementSessionActiveGenerationCount() {
+  setSessionActiveGenerationCount(
+    drawGenerationSession.activeGenerationCount + 1,
+  );
+}
+
+function decrementSessionActiveGenerationCount() {
+  setSessionActiveGenerationCount(
+    drawGenerationSession.activeGenerationCount - 1,
+  );
+}
+
 function cleanPolishedPrompt(content) {
   return String(content || '')
     .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
@@ -282,32 +346,36 @@ const Draw = () => {
   const [mode, setMode] = useState(() => getSavedMode(savedSettings));
   const [groups, setGroups] = useState([]);
   const [drawGroup, setDrawGroup] = useState(() =>
-    getSavedString(savedSettings, 'drawGroup'),
+    getSavedString(savedSettings, 'drawGroup', DEFAULT_DRAW_GROUP),
   );
   const [drawModels, setDrawModels] = useState([]);
   const [drawModel, setDrawModel] = useState(() =>
-    getSavedString(savedSettings, 'drawModel'),
+    getSavedString(savedSettings, 'drawModel', DEFAULT_DRAW_MODEL),
   );
   const [polishGroup, setPolishGroup] = useState(() =>
-    getSavedString(savedSettings, 'polishGroup'),
+    getSavedString(savedSettings, 'polishGroup', DEFAULT_POLISH_GROUP),
   );
   const [polishModels, setPolishModels] = useState([]);
   const [polishModel, setPolishModel] = useState(() =>
-    getSavedString(savedSettings, 'polishModel'),
+    getSavedString(savedSettings, 'polishModel', DEFAULT_POLISH_MODEL),
   );
   const [prompt, setPrompt] = useState(() =>
     getSavedString(savedSettings, 'prompt'),
   );
   const [size, setSize] = useState(() => getSavedSize(savedSettings));
   const [quality, setQuality] = useState(() => getSavedQuality(savedSettings));
+  const [initialGenerationSession] = useState(() => getDrawGenerationSnapshot());
   const [sourceImages, setSourceImages] = useState([]);
-  const [generationItems, setGenerationItems] = useState([]);
+  const [generationItems, setGenerationItems] = useState(
+    initialGenerationSession.generationItems,
+  );
   const [history, setHistory] = useState([]);
   const [historyPreviewRecord, setHistoryPreviewRecord] = useState(null);
-  const [activeGenerationCount, setActiveGenerationCount] = useState(0);
+  const [activeGenerationCount, setActiveGenerationCount] = useState(
+    initialGenerationSession.activeGenerationCount,
+  );
   const [isPolishing, setIsPolishing] = useState(false);
   const [error, setError] = useState(null);
-  const activeGenerationCountRef = useRef(0);
 
   const groupOptions = useMemo(
     () =>
@@ -365,6 +433,16 @@ const Draw = () => {
     return mode === 'edit' ? t('以图生成') : t('生成图片');
   }, [activeGenerationCount, mode, t]);
 
+  const isGenerateDisabled = useMemo(
+    () =>
+      !prompt.trim() ||
+      !drawGroup ||
+      !drawModel ||
+      activeGenerationCount >= MAX_CONCURRENT_GENERATIONS ||
+      (mode === 'edit' && sourceImages.length === 0),
+    [activeGenerationCount, drawGroup, drawModel, mode, prompt, sourceImages.length],
+  );
+
   const loadGroupModels = useCallback(
     async (selectedGroup, setOptions, setSelectedModel, preferTextModel = false) => {
       if (!selectedGroup) {
@@ -397,6 +475,18 @@ const Draw = () => {
         return options[0]?.value || '';
       });
     },
+    [],
+  );
+
+  useEffect(
+    () =>
+      subscribeDrawGenerationSession((snapshot) => {
+        setActiveGenerationCount(snapshot.activeGenerationCount);
+        setGenerationItems(snapshot.generationItems);
+        if (Array.isArray(snapshot.historyRecords)) {
+          setHistory(snapshot.historyRecords);
+        }
+      }),
     [],
   );
 
@@ -447,14 +537,16 @@ const Draw = () => {
   useEffect(() => {
     trimHistory(userId)
       .then((records) => {
-        setHistory(records);
-        setGenerationItems(
-          toDisplayItems(
-            records[0]?.images || [],
-            records[0]?.id || 'history',
-            records[0]?.prompt || '',
-          ),
-        );
+        setSessionHistoryRecords(records);
+        if (getDrawGenerationSnapshot().generationItems.length === 0) {
+          setSessionGenerationItems(
+            toDisplayItems(
+              records[0]?.images || [],
+              records[0]?.id || 'history',
+              records[0]?.prompt || '',
+            ),
+          );
+        }
       })
       .catch(() => setHistory([]));
   }, [userId]);
@@ -506,7 +598,10 @@ const Draw = () => {
       setError(t('请至少选择一张参考图片'));
       return;
     }
-    if (activeGenerationCountRef.current >= MAX_CONCURRENT_GENERATIONS) {
+    if (
+      getDrawGenerationSnapshot().activeGenerationCount >=
+      MAX_CONCURRENT_GENERATIONS
+    ) {
       Toast.warning(t('最多同时生成3张图片'));
       return;
     }
@@ -515,10 +610,9 @@ const Draw = () => {
     const promptText = prompt.trim();
     const sourceImageNames = sourceImages.map((image) => image.name);
 
-    activeGenerationCountRef.current += 1;
-    setActiveGenerationCount(activeGenerationCountRef.current);
+    incrementSessionActiveGenerationCount();
     setError(null);
-    setGenerationItems((current) =>
+    setSessionGenerationItems((current) =>
       appendGenerationItem(current, {
         id: taskId,
         status: 'loading',
@@ -573,7 +667,7 @@ const Draw = () => {
       }
 
       const resultImages = data.data.slice(0, DRAW_GENERATION_COUNT);
-      setGenerationItems((current) =>
+      setSessionGenerationItems((current) =>
         current.map((item) =>
           item.id === taskId
             ? {
@@ -600,7 +694,7 @@ const Draw = () => {
           images: resultImages,
           sourceImageNames,
         });
-        setHistory(records);
+        setSessionHistoryRecords(records);
       } catch {
         Toast.error(t('无法保存图片历史'));
       }
@@ -610,7 +704,7 @@ const Draw = () => {
         err?.response?.data?.error?.message ||
         err?.message ||
         t('生成失败');
-      setGenerationItems((current) =>
+      setSessionGenerationItems((current) =>
         current.map((item) =>
           item.id === taskId
             ? {
@@ -623,11 +717,7 @@ const Draw = () => {
       );
       Toast.error(msg);
     } finally {
-      activeGenerationCountRef.current = Math.max(
-        0,
-        activeGenerationCountRef.current - 1,
-      );
-      setActiveGenerationCount(activeGenerationCountRef.current);
+      decrementSessionActiveGenerationCount();
     }
   }, [drawGroup, drawModel, mode, prompt, quality, size, sourceImages, t, userId]);
 
@@ -646,7 +736,7 @@ const Draw = () => {
   const handleClearHistory = useCallback(async () => {
     if (!window.confirm(t('确认清空所有图片历史吗？'))) return;
     await clearUserHistory(userId);
-    setHistory([]);
+    setSessionHistoryRecords([]);
     setHistoryPreviewRecord(null);
   }, [t, userId]);
 
@@ -657,7 +747,7 @@ const Draw = () => {
   const handleDeleteHistory = useCallback(
     async (id) => {
       const records = await deleteHistoryItem(id, userId);
-      setHistory(records);
+      setSessionHistoryRecords(records);
       setHistoryPreviewRecord((current) =>
         current?.id === id ? null : current,
       );
@@ -667,15 +757,23 @@ const Draw = () => {
 
   return (
     <>
-      <div className='mt-[60px] grid gap-4 p-4 lg:grid-cols-[32rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
-      <Card className='min-h-0 overflow-y-auto'>
-        <Title heading={5} className='mb-4'>
-          {t('绘图功能')}
-        </Title>
+      <div className='mt-[60px] grid gap-5 bg-[#f4f7f8] p-4 lg:grid-cols-[31rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
+      <Card
+        className='min-h-0 overflow-y-auto rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
+        bodyStyle={{ padding: 20 }}
+      >
+        <div className='mb-5 flex items-center justify-between border-b border-[#edf1f3] pb-4'>
+          <Title heading={5} className='mb-0'>
+            {t('绘图功能')}
+          </Title>
+          <div className='rounded-full border border-[#cfe3df] bg-[#eef8f5] px-3 py-1 text-xs font-medium text-[#0f766e]'>
+            {activeGenerationCount}/{MAX_CONCURRENT_GENERATIONS}
+          </div>
+        </div>
 
-        <div className='flex flex-col gap-4'>
-          <div>
-            <Text className='mb-1 block text-sm font-medium'>{t('模式')}</Text>
+        <div className='flex flex-col gap-5'>
+          <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
+            <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('模式')}</Text>
             <Select
               value={mode}
               onChange={setMode}
@@ -687,10 +785,10 @@ const Draw = () => {
             />
           </div>
 
-          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2'>
-            <Text className='pb-2 text-sm font-medium'>{t('生图模型')}</Text>
+          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2 rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
+            <Text className='pb-2 text-sm font-semibold text-[#27343b]'>{t('生图模型')}</Text>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs text-gray-500'>{t('分组选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('分组选择')}</Text>
               <Select
                 value={drawGroup}
                 onChange={(value) => {
@@ -705,7 +803,7 @@ const Draw = () => {
               />
             </div>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs text-gray-500'>{t('模型选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('模型选择')}</Text>
               <Select
                 value={drawModel}
                 onChange={setDrawModel}
@@ -718,10 +816,10 @@ const Draw = () => {
             </div>
           </div>
 
-          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2'>
-            <Text className='pb-2 text-sm font-medium'>{t('提示词模型')}</Text>
+          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2 rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
+            <Text className='pb-2 text-sm font-semibold text-[#27343b]'>{t('提示词模型')}</Text>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs text-gray-500'>{t('分组选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('分组选择')}</Text>
               <Select
                 value={polishGroup}
                 onChange={(value) => {
@@ -736,7 +834,7 @@ const Draw = () => {
               />
             </div>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs text-gray-500'>{t('模型选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('模型选择')}</Text>
               <Select
                 value={polishModel}
                 onChange={setPolishModel}
@@ -749,11 +847,12 @@ const Draw = () => {
             </div>
           </div>
 
-          <div>
-            <div className='mb-1 flex items-center justify-between'>
-              <Text className='block text-sm font-medium'>{t('提示词')}</Text>
+          <div className='rounded-lg border border-[#e3e9ed] bg-white p-3 shadow-sm'>
+            <div className='mb-2 flex items-center justify-between'>
+              <Text className='block text-sm font-semibold text-[#27343b]'>{t('提示词')}</Text>
               <Button
                 size='small'
+                className='rounded-md'
                 icon={<WandSparkles size={14} />}
                 loading={isPolishing}
                 disabled={!prompt.trim() || !polishGroup || !polishModel}
@@ -768,13 +867,15 @@ const Draw = () => {
               placeholder={t('描述你想生成的图片...')}
               autosize={{ minRows: 6, maxRows: 12 }}
               maxCount={4000}
+              className='rounded-lg'
             />
           </div>
 
           {mode === 'edit' && (
-            <div>
-              <Text className='mb-1 block text-sm font-medium'>{t('参考图片')}</Text>
+            <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
+              <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('参考图片')}</Text>
               <input
+                className='block w-full rounded-lg border border-dashed border-[#b9c7cf] bg-white px-3 py-2 text-sm text-[#334149]'
                 type='file'
                 accept={DRAW_IMAGE_ACCEPT}
                 multiple
@@ -784,11 +885,11 @@ const Draw = () => {
                 }}
               />
               {sourceImages.length > 0 && (
-                <div className='mt-2 flex flex-col gap-1'>
+                <div className='mt-3 flex flex-col gap-2'>
                   {sourceImages.map((image, index) => (
                     <div
                       key={`${image.name}-${index}`}
-                      className='flex items-center justify-between rounded border px-2 py-1 text-xs'
+                      className='flex items-center justify-between rounded-lg border border-[#e1e8ec] bg-white px-3 py-2 text-xs'
                     >
                       <span className='truncate'>{image.name}</span>
                       <Button
@@ -810,8 +911,8 @@ const Draw = () => {
           )}
 
           <div className='grid grid-cols-2 gap-3'>
-            <div>
-              <Text className='mb-1 block text-sm font-medium'>{t('尺寸')}</Text>
+            <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
+              <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('尺寸')}</Text>
               <Select
                 value={size}
                 onChange={setSize}
@@ -819,8 +920,8 @@ const Draw = () => {
                 style={{ width: '100%' }}
               />
             </div>
-            <div>
-              <Text className='mb-1 block text-sm font-medium'>{t('质量')}</Text>
+            <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
+              <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('质量')}</Text>
               <Select
                 value={quality}
                 onChange={setQuality}
@@ -838,13 +939,13 @@ const Draw = () => {
               theme='solid'
               type='primary'
               block
-              disabled={
-                !prompt.trim() ||
-                !drawGroup ||
-                !drawModel ||
-                activeGenerationCount >= MAX_CONCURRENT_GENERATIONS ||
-                (mode === 'edit' && sourceImages.length === 0)
+              className='h-11 rounded-lg text-base font-semibold shadow-sm'
+              style={
+                isGenerateDisabled
+                  ? undefined
+                  : { backgroundColor: '#0f766e', borderColor: '#0f766e' }
               }
+              disabled={isGenerateDisabled}
               onClick={handleSubmit}
             >
               {generateButtonText}
@@ -860,24 +961,28 @@ const Draw = () => {
         </div>
       </Card>
 
-      <Card className='min-h-0 overflow-hidden'>
+      <Card
+        className='min-h-0 overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
+        bodyStyle={{ height: '100%', padding: 20 }}
+      >
         <div className='flex h-full min-h-0 flex-col'>
-          <div className='mb-4 flex flex-col gap-3 border-b pb-3 xl:flex-row xl:items-start xl:justify-between'>
+          <div className='mb-4 flex flex-col gap-4 border-b border-[#edf1f3] pb-4 xl:flex-row xl:items-start xl:justify-between'>
             <div>
-              <Title heading={5} className='mb-1'>
+              <Title heading={5} className='mb-1 text-[#1f2a30]'>
                 {t('生成预览')}
               </Title>
-              <Text type='tertiary'>
+              <Text className='text-[#6b7a83]'>
                 {t('最多同时生成3张图片')}
               </Text>
             </div>
 
-            <div className='w-full xl:w-[24rem]'>
+            <div className='w-full rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3 xl:w-[24rem]'>
               <div className='mb-1 flex items-center justify-between'>
-                <Text strong>{t('历史记录')}</Text>
+                <Text strong className='text-[#27343b]'>{t('历史记录')}</Text>
                 <Button
                   size='small'
                   type='tertiary'
+                  className='rounded-md'
                   icon={<Trash2 size={14} />}
                   disabled={history.length === 0}
                   onClick={handleClearHistory}
@@ -885,23 +990,23 @@ const Draw = () => {
                   {t('清空历史')}
                 </Button>
               </div>
-              <Text className='mb-2 block text-xs' type='tertiary'>
+              <Text className='mb-3 block text-xs text-[#6b7a83]'>
                 {t('历史记录只保存最近5张图片，多余图片会自动删除')}
               </Text>
               {history.length === 0 ? (
-                <div className='rounded border border-dashed p-3 text-center'>
+                <div className='rounded-lg border border-dashed border-[#c7d2d8] bg-white p-3 text-center'>
                   <Text type='tertiary'>{t('暂无保存图片')}</Text>
                 </div>
               ) : (
-                <div className='flex max-h-40 flex-col gap-2 overflow-y-auto pr-1'>
+                <div className='flex max-h-44 flex-col gap-2 overflow-y-auto pr-1'>
                   {history.map((record) => {
                     const src = getImageSource(record.images?.[0]);
                     return (
-                      <div key={record.id} className='rounded border p-2'>
+                      <div key={record.id} className='rounded-lg border border-[#e1e8ec] bg-white p-2 transition-colors hover:border-[#8fcac0] hover:bg-[#f5fbfa]'>
                         <div className='flex gap-2'>
                           <button
                             type='button'
-                            className='size-14 shrink-0 overflow-hidden rounded border bg-gray-50'
+                            className='size-14 shrink-0 overflow-hidden rounded-lg border border-[#d7e0e5] bg-gray-50'
                             onClick={() => handleOpenHistoryRecord(record)}
                           >
                             {src ? (
@@ -912,10 +1017,10 @@ const Draw = () => {
                           </button>
                           <button
                             type='button'
-                            className='min-w-0 flex-1 text-left text-xs'
+                            className='min-w-0 flex-1 text-left text-xs text-[#334149]'
                             onClick={() => handleOpenHistoryRecord(record)}
                           >
-                            <div className='mb-1 text-[11px] text-gray-500'>
+                            <div className='mb-1 text-[11px] text-[#7b8991]'>
                               {record.mode === 'edit' ? t('图生图') : t('文生图')}
                               {' · '}
                               {new Date(record.createdAt).toLocaleString()}
@@ -937,17 +1042,19 @@ const Draw = () => {
             </div>
           </div>
 
-          <div className='min-h-0 flex-1 overflow-y-auto'>
+          <div className='min-h-0 flex-1 overflow-y-auto rounded-xl bg-[#f7fafb] p-4'>
             {error && (
-              <div className='mb-3 rounded border border-red-200 bg-red-50 p-3'>
+              <div className='mb-3 rounded-lg border border-red-200 bg-red-50 p-3'>
                 <Text type='danger'>{error}</Text>
               </div>
             )}
 
             {generationItems.length === 0 && (
-              <div className='flex h-full min-h-[28rem] flex-col items-center justify-center gap-3 text-gray-400'>
-                <ImageIcon size={64} strokeWidth={1} />
-                <Text type='tertiary'>{t('生成的图片将显示在这里')}</Text>
+              <div className='flex h-full min-h-[28rem] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#c9d5dc] bg-white text-gray-400'>
+                <div className='rounded-full bg-[#eef3f5] p-4'>
+                  <ImageIcon size={56} strokeWidth={1} />
+                </div>
+                <Text className='text-[#7b8991]'>{t('生成的图片将显示在这里')}</Text>
               </div>
             )}
 
@@ -958,12 +1065,12 @@ const Draw = () => {
                   return (
                     <div
                       key={item.id}
-                      className={`${previewItemClass} group relative overflow-hidden rounded-lg border bg-white`}
+                      className={`${previewItemClass} group relative overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm transition-shadow hover:shadow-md`}
                     >
                       {item.status === 'loading' && (
-                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-3 bg-gray-50 px-4 text-center'>
+                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-3 bg-[#f4f8f9] px-4 text-center'>
                           <Spin size='large' />
-                          <Text type='tertiary'>
+                          <Text className='text-[#6b7a83]'>
                             {t('生成图片时间约为1-2分钟请耐心等待')}
                           </Text>
                         </div>
@@ -982,9 +1089,10 @@ const Draw = () => {
                             alt={`Generated ${index + 1}`}
                             className='w-full object-contain'
                           />
-                          <div className='absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100'>
+                          <div className='absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100'>
                             <Button
                               size='small'
+                              className='rounded-md shadow-sm'
                               icon={<Download size={14} />}
                               onClick={() => handleDownload(item.image, index)}
                             >
@@ -992,8 +1100,8 @@ const Draw = () => {
                             </Button>
                           </div>
                           {item.prompt && (
-                            <div className='border-t bg-white/80 p-2'>
-                              <Text size='small' type='tertiary'>
+                            <div className='border-t border-[#edf1f3] bg-white/90 p-3'>
+                              <Text size='small' className='text-[#5d6b73]'>
                                 {item.prompt}
                               </Text>
                             </div>
@@ -1014,11 +1122,12 @@ const Draw = () => {
       visible={Boolean(historyPreviewRecord)}
       footer={null}
       width={960}
+      bodyStyle={{ background: '#f7fafb' }}
       onCancel={() => setHistoryPreviewRecord(null)}
     >
       {historyPreviewRecord && (
         <div className='flex flex-col gap-4'>
-          <div className='text-xs text-gray-500'>
+          <div className='rounded-lg border border-[#e3e9ed] bg-white px-3 py-2 text-xs text-[#6b7a83]'>
             {historyPreviewRecord.mode === 'edit' ? t('图生图') : t('文生图')}
             {' · '}
             {new Date(historyPreviewRecord.createdAt).toLocaleString()}
@@ -1029,7 +1138,7 @@ const Draw = () => {
               return (
                 <div
                   key={item.id}
-                  className={`${historyPreviewItemClass} overflow-hidden rounded-lg border bg-white`}
+                  className={`${historyPreviewItemClass} overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm`}
                 >
                   {src ? (
                     <img
@@ -1038,16 +1147,17 @@ const Draw = () => {
                       className='w-full object-contain'
                     />
                   ) : (
-                    <div className='flex aspect-square min-h-[16rem] items-center justify-center bg-gray-50'>
+                    <div className='flex aspect-square min-h-[16rem] items-center justify-center bg-[#f4f8f9]'>
                       <ImageIcon size={48} strokeWidth={1} />
                     </div>
                   )}
-                  <div className='flex items-start justify-between gap-3 border-t bg-white/80 p-2'>
-                    <Text size='small' type='tertiary'>
+                  <div className='flex items-start justify-between gap-3 border-t border-[#edf1f3] bg-white/90 p-3'>
+                    <Text size='small' className='text-[#5d6b73]'>
                       {item.prompt}
                     </Text>
                     <Button
                       size='small'
+                      className='shrink-0 rounded-md'
                       icon={<Download size={14} />}
                       onClick={() => handleDownload(item.image, index)}
                     >
