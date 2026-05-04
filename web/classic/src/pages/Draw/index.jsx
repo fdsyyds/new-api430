@@ -16,13 +16,13 @@ import { API } from '../../helpers/api';
 const { Title, Text } = Typography;
 
 const SIZE_OPTIONS = [
-  '1024x1024',
-  '1536x1024',
-  '1024x1536',
-  '2048x2048',
-  '2880x2880',
-  '3840x2160',
-  '2160x3840',
+  { label: '1024x1024（1K 方图）', value: '1024x1024' },
+  { label: '1536x1024（1.5K 横图）', value: '1536x1024' },
+  { label: '1024x1536（1.5K 竖图）', value: '1024x1536' },
+  { label: '2048x2048（2K 方图）', value: '2048x2048' },
+  { label: '2880x2880（3K 方图）', value: '2880x2880' },
+  { label: '3840x2160（4K 横图）', value: '3840x2160' },
+  { label: '2160x3840（4K 竖图）', value: '2160x3840' },
 ];
 
 const QUALITY_OPTIONS = ['high', 'medium', 'low', 'auto'];
@@ -84,7 +84,9 @@ function getSavedMode(settings) {
 
 function getSavedSize(settings) {
   const savedSize = getSavedString(settings, 'size', '1024x1024');
-  return SIZE_OPTIONS.includes(savedSize) ? savedSize : '1024x1024';
+  return SIZE_OPTIONS.some((item) => item.value === savedSize)
+    ? savedSize
+    : '1024x1024';
 }
 
 function getSavedQuality(settings) {
@@ -371,7 +373,7 @@ const Draw = () => {
   );
   const [history, setHistory] = useState([]);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
-  const [historyPreviewRecord, setHistoryPreviewRecord] = useState(null);
+  const [imagePreviewRecord, setImagePreviewRecord] = useState(null);
   const [activeGenerationCount, setActiveGenerationCount] = useState(
     initialGenerationSession.activeGenerationCount,
   );
@@ -401,30 +403,30 @@ const Draw = () => {
     [generationItems.length],
   );
 
-  const historyPreviewItems = useMemo(
+  const imagePreviewItems = useMemo(
     () =>
-      historyPreviewRecord
+      imagePreviewRecord
         ? toDisplayItems(
-            historyPreviewRecord.images,
-            historyPreviewRecord.id,
-            historyPreviewRecord.prompt || '',
+            imagePreviewRecord.images,
+            imagePreviewRecord.id,
+            imagePreviewRecord.prompt || '',
           )
         : [],
-    [historyPreviewRecord],
+    [imagePreviewRecord],
   );
 
-  const historyPreviewGridClass = useMemo(() => {
-    if (historyPreviewItems.length === 1) return 'grid place-items-center gap-4';
-    if (historyPreviewItems.length === 2) {
+  const imagePreviewGridClass = useMemo(() => {
+    if (imagePreviewItems.length === 1) return 'grid place-items-center gap-4';
+    if (imagePreviewItems.length === 2) {
       return 'grid grid-cols-1 gap-4 md:grid-cols-2';
     }
     return 'grid grid-cols-1 gap-4 md:grid-cols-3';
-  }, [historyPreviewItems.length]);
+  }, [imagePreviewItems.length]);
 
-  const historyPreviewItemClass = useMemo(
+  const imagePreviewItemClass = useMemo(
     () =>
-      historyPreviewItems.length === 1 ? 'w-full max-w-2xl' : 'w-full',
-    [historyPreviewItems.length],
+      imagePreviewItems.length === 1 ? 'w-full max-w-2xl' : 'w-full',
+    [imagePreviewItems.length],
   );
 
   const generateButtonText = useMemo(() => {
@@ -745,19 +747,31 @@ const Draw = () => {
     await clearUserHistory(userId);
     setSessionHistoryRecords([]);
     setHistoryPanelOpen(false);
-    setHistoryPreviewRecord(null);
+    setImagePreviewRecord(null);
   }, [t, userId]);
 
   const handleOpenHistoryRecord = useCallback((record) => {
     setHistoryPanelOpen(false);
-    setHistoryPreviewRecord(record);
+    setImagePreviewRecord(record);
   }, []);
+
+  const handleOpenGenerationPreview = useCallback((item) => {
+    if (item.status !== 'done' || !item.image) return;
+
+    setImagePreviewRecord({
+      id: item.id,
+      mode,
+      createdAt: item.createdAt || Date.now(),
+      images: [item.image],
+      prompt: item.prompt || '',
+    });
+  }, [mode]);
 
   const handleDeleteHistory = useCallback(
     async (id) => {
       const records = await deleteHistoryItem(id, userId);
       setSessionHistoryRecords(records);
-      setHistoryPreviewRecord((current) =>
+      setImagePreviewRecord((current) =>
         current?.id === id ? null : current,
       );
     },
@@ -925,7 +939,7 @@ const Draw = () => {
               <Select
                 value={size}
                 onChange={setSize}
-                optionList={SIZE_OPTIONS.map((item) => ({ label: item, value: item }))}
+                optionList={SIZE_OPTIONS}
                 style={{ width: '100%' }}
               />
             </div>
@@ -987,15 +1001,17 @@ const Draw = () => {
           </div>
 
           <Button
-            className='absolute right-5 top-5 size-11 rounded-full border border-[#cfe3df] bg-[#eef8f5] text-[#0f766e] shadow-sm'
+            className='absolute right-5 top-5 rounded-full border border-[#cfe3df] bg-white px-3 py-2 text-[#111827] shadow-sm'
             icon={<History size={18} />}
             onClick={() => setHistoryPanelOpen((open) => !open)}
-          />
+          >
+            {t('历史记录')}
+          </Button>
 
           {historyPanelOpen && (
-            <div className='absolute right-5 top-20 z-10 w-[24rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 shadow-lg'>
+            <div className='absolute right-5 top-20 z-10 w-[24rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 text-[#111827] shadow-lg'>
               <div className='mb-1 flex items-center justify-between'>
-                <Text strong className='text-[#27343b]'>{t('历史记录')}</Text>
+                <Text strong className='text-[#111827]'>{t('历史记录')}</Text>
                 <Button
                   size='small'
                   type='tertiary'
@@ -1007,7 +1023,7 @@ const Draw = () => {
                   {t('清空历史')}
                 </Button>
               </div>
-              <Text className='mb-3 block text-xs text-[#6b7a83]'>
+              <Text className='mb-3 block text-xs text-[#111827]'>
                 {t('历史记录只保存最近5张图片，多余图片会自动删除')}
               </Text>
               {history.length === 0 ? (
@@ -1034,10 +1050,10 @@ const Draw = () => {
                           </button>
                           <button
                             type='button'
-                            className='min-w-0 flex-1 text-left text-xs text-[#334149]'
+                            className='min-w-0 flex-1 text-left text-xs text-[#111827]'
                             onClick={() => handleOpenHistoryRecord(record)}
                           >
-                            <div className='mb-1 text-[11px] text-[#7b8991]'>
+                            <div className='mb-1 text-[11px] text-[#111827]'>
                               {record.mode === 'edit' ? t('图生图') : t('文生图')}
                               {' · '}
                               {new Date(record.createdAt).toLocaleString()}
@@ -1112,7 +1128,8 @@ const Draw = () => {
                           <img
                             src={src}
                             alt={`Generated ${index + 1}`}
-                            className='w-full object-contain'
+                            className='w-full cursor-zoom-in object-contain'
+                            onClick={() => handleOpenGenerationPreview(item)}
                           />
                           <div className='absolute right-14 top-3 opacity-0 transition-opacity group-hover:opacity-100'>
                             <Button
@@ -1143,27 +1160,27 @@ const Draw = () => {
       </Card>
     </div>
     <Modal
-      title={t('历史记录')}
-      visible={Boolean(historyPreviewRecord)}
+      title={t('图片预览')}
+      visible={Boolean(imagePreviewRecord)}
       footer={null}
       width={960}
       bodyStyle={{ background: '#f7fafb' }}
-      onCancel={() => setHistoryPreviewRecord(null)}
+      onCancel={() => setImagePreviewRecord(null)}
     >
-      {historyPreviewRecord && (
+      {imagePreviewRecord && (
         <div className='flex flex-col gap-4'>
           <div className='rounded-lg border border-[#e3e9ed] bg-white px-3 py-2 text-xs text-[#6b7a83]'>
-            {historyPreviewRecord.mode === 'edit' ? t('图生图') : t('文生图')}
+            {imagePreviewRecord.mode === 'edit' ? t('图生图') : t('文生图')}
             {' · '}
-            {new Date(historyPreviewRecord.createdAt).toLocaleString()}
+            {new Date(imagePreviewRecord.createdAt).toLocaleString()}
           </div>
-          <div className={historyPreviewGridClass}>
-            {historyPreviewItems.map((item, index) => {
+          <div className={imagePreviewGridClass}>
+            {imagePreviewItems.map((item, index) => {
               const src = getImageSource(item.image);
               return (
                 <div
                   key={item.id}
-                  className={`${historyPreviewItemClass} overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm`}
+                  className={`${imagePreviewItemClass} overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm`}
                 >
                   {src ? (
                     <img
