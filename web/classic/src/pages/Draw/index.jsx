@@ -5,6 +5,7 @@ import {
   TextArea,
   Select,
   Card,
+  Modal,
   Typography,
   Spin,
   Toast,
@@ -31,6 +32,7 @@ const MAX_CONCURRENT_GENERATIONS = 3;
 const DRAW_HISTORY_DB = 'new-api-classic-draw-history';
 const DRAW_HISTORY_STORE = 'records';
 const DRAW_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp';
+const DRAW_SETTINGS_STORAGE_PREFIX = 'new-api-classic-draw-settings';
 
 function toModelOptions(models) {
   return (Array.isArray(models) ? models : []).map((item) => ({
@@ -41,6 +43,48 @@ function toModelOptions(models) {
 
 function getCurrentUserId() {
   return localStorage.getItem('uid') || 'anonymous';
+}
+
+function getDrawSettingsKey(userId) {
+  return `${DRAW_SETTINGS_STORAGE_PREFIX}:${userId || 'anonymous'}`;
+}
+
+function readDrawSettings(userId) {
+  try {
+    const raw = localStorage.getItem(getDrawSettingsKey(userId));
+    if (!raw) return {};
+
+    const settings = JSON.parse(raw);
+    return settings && typeof settings === 'object' ? settings : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDrawSettings(userId, settings) {
+  try {
+    localStorage.setItem(getDrawSettingsKey(userId), JSON.stringify(settings));
+  } catch {
+    // Ignore storage failures so drawing still works in restricted browsers.
+  }
+}
+
+function getSavedString(settings, key, fallback = '') {
+  return typeof settings?.[key] === 'string' ? settings[key] : fallback;
+}
+
+function getSavedMode(settings) {
+  return settings?.mode === 'edit' ? 'edit' : 'generate';
+}
+
+function getSavedSize(settings) {
+  const savedSize = getSavedString(settings, 'size', '1024x1024');
+  return SIZE_OPTIONS.includes(savedSize) ? savedSize : '1024x1024';
+}
+
+function getSavedQuality(settings) {
+  const savedQuality = getSavedString(settings, 'quality', 'auto');
+  return QUALITY_OPTIONS.includes(savedQuality) ? savedQuality : 'auto';
 }
 
 function openHistoryDb() {
@@ -189,13 +233,14 @@ function getImageSource(item) {
   return item.b64_json ? `data:image/png;base64,${item.b64_json}` : item.url || '';
 }
 
-function toDisplayItems(images, idPrefix) {
+function toDisplayItems(images, idPrefix, promptText = '') {
   return (Array.isArray(images) ? images : [])
     .slice(0, MAX_CONCURRENT_GENERATIONS)
     .map((image, index) => ({
       id: `${idPrefix}-${index}`,
       status: 'done',
       image,
+      prompt: promptText,
     }));
 }
 
@@ -219,23 +264,46 @@ function appendGenerationItem(current, newItem) {
   return next.filter((item) => keptIds.has(item.id));
 }
 
+function cleanPolishedPrompt(content) {
+  return String(content || '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```[\s\S]*?```/g, (match) =>
+      match.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, ''),
+    )
+    .replace(/^\s*(润色结果|最终提示词|提示词)[:：]\s*/i, '')
+    .trim();
+}
+
 const Draw = () => {
   const { t } = useTranslation();
   const userId = getCurrentUserId();
-  const [mode, setMode] = useState('generate');
+  const [savedSettings] = useState(() => readDrawSettings(userId));
+  const [mode, setMode] = useState(() => getSavedMode(savedSettings));
   const [groups, setGroups] = useState([]);
-  const [drawGroup, setDrawGroup] = useState('');
+  const [drawGroup, setDrawGroup] = useState(() =>
+    getSavedString(savedSettings, 'drawGroup'),
+  );
   const [drawModels, setDrawModels] = useState([]);
-  const [drawModel, setDrawModel] = useState('');
-  const [polishGroup, setPolishGroup] = useState('');
+  const [drawModel, setDrawModel] = useState(() =>
+    getSavedString(savedSettings, 'drawModel'),
+  );
+  const [polishGroup, setPolishGroup] = useState(() =>
+    getSavedString(savedSettings, 'polishGroup'),
+  );
   const [polishModels, setPolishModels] = useState([]);
-  const [polishModel, setPolishModel] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [size, setSize] = useState('1024x1024');
-  const [quality, setQuality] = useState('auto');
+  const [polishModel, setPolishModel] = useState(() =>
+    getSavedString(savedSettings, 'polishModel'),
+  );
+  const [prompt, setPrompt] = useState(() =>
+    getSavedString(savedSettings, 'prompt'),
+  );
+  const [size, setSize] = useState(() => getSavedSize(savedSettings));
+  const [quality, setQuality] = useState(() => getSavedQuality(savedSettings));
   const [sourceImages, setSourceImages] = useState([]);
   const [generationItems, setGenerationItems] = useState([]);
   const [history, setHistory] = useState([]);
+  const [historyPreviewRecord, setHistoryPreviewRecord] = useState(null);
   const [activeGenerationCount, setActiveGenerationCount] = useState(0);
   const [isPolishing, setIsPolishing] = useState(false);
   const [error, setError] = useState(null);
@@ -262,6 +330,32 @@ const Draw = () => {
     () =>
       generationItems.length === 1 ? 'w-full max-w-3xl' : 'w-full',
     [generationItems.length],
+  );
+
+  const historyPreviewItems = useMemo(
+    () =>
+      historyPreviewRecord
+        ? toDisplayItems(
+            historyPreviewRecord.images,
+            historyPreviewRecord.id,
+            historyPreviewRecord.prompt || '',
+          )
+        : [],
+    [historyPreviewRecord],
+  );
+
+  const historyPreviewGridClass = useMemo(() => {
+    if (historyPreviewItems.length === 1) return 'grid place-items-center gap-4';
+    if (historyPreviewItems.length === 2) {
+      return 'grid grid-cols-1 gap-4 md:grid-cols-2';
+    }
+    return 'grid grid-cols-1 gap-4 md:grid-cols-3';
+  }, [historyPreviewItems.length]);
+
+  const historyPreviewItemClass = useMemo(
+    () =>
+      historyPreviewItems.length === 1 ? 'w-full max-w-2xl' : 'w-full',
+    [historyPreviewItems.length],
   );
 
   const generateButtonText = useMemo(() => {
@@ -307,6 +401,29 @@ const Draw = () => {
   );
 
   useEffect(() => {
+    saveDrawSettings(userId, {
+      mode,
+      drawGroup,
+      drawModel,
+      polishGroup,
+      polishModel,
+      prompt,
+      size,
+      quality,
+    });
+  }, [
+    drawGroup,
+    drawModel,
+    mode,
+    polishGroup,
+    polishModel,
+    prompt,
+    quality,
+    size,
+    userId,
+  ]);
+
+  useEffect(() => {
     API.get('/api/user/self/groups').then((res) => {
       if (res.data.success && res.data.data) {
         const groupList = Object.entries(res.data.data).map(([name, info]) => ({
@@ -332,7 +449,11 @@ const Draw = () => {
       .then((records) => {
         setHistory(records);
         setGenerationItems(
-          toDisplayItems(records[0]?.images || [], records[0]?.id || 'history'),
+          toDisplayItems(
+            records[0]?.images || [],
+            records[0]?.id || 'history',
+            records[0]?.prompt || '',
+          ),
         );
       })
       .catch(() => setHistory([]));
@@ -353,11 +474,11 @@ const Draw = () => {
             {
               role: 'system',
               content:
-                'You polish prompts for image generation. Preserve the user intent, remove ambiguity, add useful visual detail, and return only the polished prompt.',
+                '你是图像生成提示词润色助手。请保留用户原意，补充清晰的主体、场景、构图、光线、材质、风格和画面细节。必须使用简体中文输出，只输出最终润色后的提示词正文。不要输出思考过程、解释、标题、Markdown、代码块、<thinking> 或 <think> 标签。',
             },
             {
               role: 'user',
-              content: prompt.trim(),
+              content: `请把下面的绘图提示词润色成适合图像生成的中文提示词，只返回润色后的正文：\n\n${prompt.trim()}`,
             },
           ],
           stream: false,
@@ -366,7 +487,9 @@ const Draw = () => {
         { timeout: 60000 },
       );
 
-      const polished = res.data?.choices?.[0]?.message?.content?.trim();
+      const polished = cleanPolishedPrompt(
+        res.data?.choices?.[0]?.message?.content,
+      );
       if (!polished) throw new Error(t('提示词润色失败'));
       setPrompt(polished);
       Toast.success(t('提示词已润色'));
@@ -524,23 +647,27 @@ const Draw = () => {
     if (!window.confirm(t('确认清空所有图片历史吗？'))) return;
     await clearUserHistory(userId);
     setHistory([]);
+    setHistoryPreviewRecord(null);
   }, [t, userId]);
 
   const handleOpenHistoryRecord = useCallback((record) => {
-    setError(null);
-    setGenerationItems(toDisplayItems(record.images, record.id));
+    setHistoryPreviewRecord(record);
   }, []);
 
   const handleDeleteHistory = useCallback(
     async (id) => {
       const records = await deleteHistoryItem(id, userId);
       setHistory(records);
+      setHistoryPreviewRecord((current) =>
+        current?.id === id ? null : current,
+      );
     },
     [userId],
   );
 
   return (
-    <div className='mt-[60px] grid gap-4 p-4 lg:grid-cols-[32rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
+    <>
+      <div className='mt-[60px] grid gap-4 p-4 lg:grid-cols-[32rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
       <Card className='min-h-0 overflow-y-auto'>
         <Title heading={5} className='mb-4'>
           {t('绘图功能')}
@@ -864,10 +991,10 @@ const Draw = () => {
                               {t('下载')}
                             </Button>
                           </div>
-                          {item.image?.revised_prompt && (
+                          {item.prompt && (
                             <div className='border-t bg-white/80 p-2'>
                               <Text size='small' type='tertiary'>
-                                {item.image.revised_prompt}
+                                {item.prompt}
                               </Text>
                             </div>
                           )}
@@ -882,6 +1009,59 @@ const Draw = () => {
         </div>
       </Card>
     </div>
+    <Modal
+      title={t('历史记录')}
+      visible={Boolean(historyPreviewRecord)}
+      footer={null}
+      width={960}
+      onCancel={() => setHistoryPreviewRecord(null)}
+    >
+      {historyPreviewRecord && (
+        <div className='flex flex-col gap-4'>
+          <div className='text-xs text-gray-500'>
+            {historyPreviewRecord.mode === 'edit' ? t('图生图') : t('文生图')}
+            {' · '}
+            {new Date(historyPreviewRecord.createdAt).toLocaleString()}
+          </div>
+          <div className={historyPreviewGridClass}>
+            {historyPreviewItems.map((item, index) => {
+              const src = getImageSource(item.image);
+              return (
+                <div
+                  key={item.id}
+                  className={`${historyPreviewItemClass} overflow-hidden rounded-lg border bg-white`}
+                >
+                  {src ? (
+                    <img
+                      src={src}
+                      alt={`History ${index + 1}`}
+                      className='w-full object-contain'
+                    />
+                  ) : (
+                    <div className='flex aspect-square min-h-[16rem] items-center justify-center bg-gray-50'>
+                      <ImageIcon size={48} strokeWidth={1} />
+                    </div>
+                  )}
+                  <div className='flex items-start justify-between gap-3 border-t bg-white/80 p-2'>
+                    <Text size='small' type='tertiary'>
+                      {item.prompt}
+                    </Text>
+                    <Button
+                      size='small'
+                      icon={<Download size={14} />}
+                      onClick={() => handleDownload(item.image, index)}
+                    >
+                      {t('下载')}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Modal>
+    </>
   );
 };
 
