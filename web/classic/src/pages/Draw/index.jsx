@@ -47,7 +47,9 @@ function downloadBase64Image(b64, filename) {
 const Draw = () => {
   const { t } = useTranslation();
   const [models, setModels] = useState([]);
-  const [model, setModel] = useState('gpt-image-1');
+  const [groups, setGroups] = useState([]);
+  const [model, setModel] = useState('gpt-image-2');
+  const [group, setGroup] = useState('GPT');
   const [prompt, setPrompt] = useState('');
   const [size, setSize] = useState('1024x1024');
   const [quality, setQuality] = useState('auto');
@@ -60,6 +62,19 @@ const Draw = () => {
     API.get('/api/user/models').then((res) => {
       if (res.data.success && Array.isArray(res.data.data)) {
         setModels(res.data.data.map((m) => ({ label: m, value: m })));
+      }
+    });
+    API.get('/api/user/self/groups').then((res) => {
+      if (res.data.success && res.data.data) {
+        const groupList = Object.entries(res.data.data).map(([name, info]) => ({
+          label: name,
+          value: name,
+          desc: info.desc,
+        }));
+        setGroups(groupList);
+        if (groupList.length > 0 && !groupList.find((g) => g.value === 'default')) {
+          setGroup(groupList[0].value);
+        }
       }
     });
   }, []);
@@ -77,6 +92,7 @@ const Draw = () => {
         n,
         size,
         quality,
+        group,
         response_format: 'b64_json',
       }, { timeout: 300000 });
 
@@ -103,7 +119,7 @@ const Draw = () => {
     } finally {
       setIsGenerating(false);
     }
-  }, [model, prompt, n, size, quality, t]);
+  }, [model, prompt, n, size, quality, group, t]);
 
   const handleDownload = useCallback((item, index) => {
     if (item.b64_json) {
@@ -124,6 +140,18 @@ const Draw = () => {
         <Title heading={5} className='mb-4'>{t('绘图功能')}</Title>
 
         <div className='flex flex-col gap-4'>
+          <div>
+            <Text className='mb-1 block text-sm font-medium'>{t('分组')}</Text>
+            <Select
+              value={group}
+              onChange={setGroup}
+              optionList={groups}
+              placeholder={t('选择分组')}
+              style={{ width: '100%' }}
+              filter
+            />
+          </div>
+
           <div>
             <Text className='mb-1 block text-sm font-medium'>{t('模型')}</Text>
             <Select
