@@ -220,13 +220,17 @@ function isLikelyImageModel(model) {
   return /(^|[-_])(image|dall|mj|midjourney|sdxl|stable)([-_]|$)/i.test(model);
 }
 
-function downloadBase64Image(b64, filename) {
+function base64ToBlob(b64, type = 'image/png') {
   const byteChars = atob(b64);
   const byteNumbers = new Array(byteChars.length);
   for (let i = 0; i < byteChars.length; i++) {
     byteNumbers[i] = byteChars.charCodeAt(i);
   }
-  const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/png' });
+  return new Blob([new Uint8Array(byteNumbers)], { type });
+}
+
+function downloadBase64Image(b64, filename) {
+  const blob = base64ToBlob(b64);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -238,6 +242,26 @@ function downloadBase64Image(b64, filename) {
 function getImageSource(item) {
   if (!item) return '';
   return item.b64_json ? `data:image/png;base64,${item.b64_json}` : item.url || '';
+}
+
+async function imageItemToFile(item, filename) {
+  if (item?.b64_json) {
+    const blob = base64ToBlob(item.b64_json);
+    return new File([blob], filename, { type: blob.type || 'image/png' });
+  }
+
+  if (item?.url) {
+    const response = await fetch(item.url);
+    if (!response.ok) throw new Error('无法读取历史图片');
+
+    const blob = await response.blob();
+    if (blob.type && !blob.type.startsWith('image/')) {
+      throw new Error('历史记录不是有效图片');
+    }
+    return new File([blob], filename, { type: blob.type || 'image/png' });
+  }
+
+  throw new Error('无法读取历史图片');
 }
 
 function toDisplayItems(images, idPrefix, promptText = '') {
@@ -736,6 +760,29 @@ const Draw = () => {
     }
   }, []);
 
+  const handleUseImageForEdit = useCallback(
+    async (image, record, index = 0) => {
+      if (!image) return;
+
+      try {
+        const file = await imageItemToFile(
+          image,
+          `history-image-${record?.id || Date.now()}-${index + 1}.png`,
+        );
+
+        setMode('edit');
+        setSourceImages((current) => [...current, file]);
+        setHistoryPanelOpen(false);
+        setImagePreviewRecord(null);
+        setError(null);
+        Toast.success(t('已添加为图生图参考图片'));
+      } catch {
+        Toast.error(t('这张历史图无法直接作为参考图'));
+      }
+    },
+    [t],
+  );
+
   const handleHideGenerationItem = useCallback((id) => {
     setSessionGenerationItems((current) =>
       current.filter((item) => item.id !== id),
@@ -1063,12 +1110,27 @@ const Draw = () => {
                             </div>
                             <div className='line-clamp-2'>{record.prompt}</div>
                           </button>
-                          <Button
-                            size='small'
-                            type='tertiary'
-                            icon={<Trash2 size={14} />}
-                            onClick={() => handleDeleteHistory(record.id)}
-                          />
+                          <div className='flex shrink-0 flex-col gap-1'>
+                            <Button
+                              size='small'
+                              type='tertiary'
+                              className='rounded-md'
+                              icon={<WandSparkles size={14} />}
+                              disabled={!src}
+                              onClick={() =>
+                                handleUseImageForEdit(record.images?.[0], record, 0)
+                              }
+                            >
+                              {t('用于图生图')}
+                            </Button>
+                            <Button
+                              size='small'
+                              type='tertiary'
+                              className='rounded-md'
+                              icon={<Trash2 size={14} />}
+                              onClick={() => handleDeleteHistory(record.id)}
+                            />
+                          </div>
                         </div>
                       </div>
                     );
@@ -1198,17 +1260,29 @@ const Draw = () => {
                     </div>
                   )}
                   <div className='flex items-start justify-between gap-3 border-t border-[#edf1f3] bg-white p-3'>
-                    <Text size='small' className='text-[#5d6b73]'>
+                    <Text size='small' className='min-w-0 flex-1 text-[#5d6b73]'>
                       {item.prompt}
                     </Text>
-                    <Button
-                      size='small'
-                      className='shrink-0 rounded-md'
-                      icon={<Download size={14} />}
-                      onClick={() => handleDownload(item.image, index)}
-                    >
-                      {t('下载')}
-                    </Button>
+                    <div className='flex shrink-0 flex-wrap justify-end gap-2'>
+                      <Button
+                        size='small'
+                        className='rounded-md'
+                        icon={<WandSparkles size={14} />}
+                        onClick={() =>
+                          handleUseImageForEdit(item.image, imagePreviewRecord, index)
+                        }
+                      >
+                        {t('用于图生图')}
+                      </Button>
+                      <Button
+                        size='small'
+                        className='rounded-md'
+                        icon={<Download size={14} />}
+                        onClick={() => handleDownload(item.image, index)}
+                      >
+                        {t('下载')}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               );
