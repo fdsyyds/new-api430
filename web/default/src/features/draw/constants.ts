@@ -23,3 +23,7 @@ export const DEFAULT_DRAW_CONFIG = {
   quality: 'auto',
   n: 1,
 }
+
+export const DRAW_HISTORY_LIMIT = 30
+
+export const DRAW_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp'
