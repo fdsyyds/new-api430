@@ -21,7 +21,6 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
   chat: {
     enabled: true,
     playground: true,
-    draw: true,
     chat: true,
   },
   console: {
@@ -31,6 +30,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     log: true,
     midjourney: true,
     task: true,
+    draw: true,
   },
   personal: {
     enabled: true,
@@ -53,7 +53,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
  */
 const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/playground': { section: 'chat', module: 'playground' },
-  '/draw': { section: 'chat', module: 'draw' },
+  '/draw': { section: 'console', module: 'draw' },
   '/dashboard': { section: 'console', module: 'detail' },
   '/dashboard/overview': { section: 'console', module: 'detail' },
   '/dashboard/models': { section: 'console', module: 'detail' },
@@ -96,6 +96,9 @@ function parseSidebarConfig(
       if (parsed.chat.enabled === undefined) parsed.chat.enabled = true
       if (parsed.chat.playground === undefined) parsed.chat.playground = true
       if (parsed.chat.chat === undefined) parsed.chat.chat = true
+    }
+    if (parsed.console) {
+      if (parsed.console.draw === undefined) parsed.console.draw = true
     }
     return parsed
   } catch {

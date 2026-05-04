@@ -44,11 +44,6 @@ export function useSidebarData(): SidebarData {
             icon: FlaskConical,
           },
           {
-            title: t('Draw'),
-            url: '/draw',
-            icon: Paintbrush,
-          },
-          {
             title: t('Chat'),
             icon: MessageSquare,
             type: 'chat-presets',
@@ -85,6 +80,11 @@ export function useSidebarData(): SidebarData {
             activeUrls: ['/usage-logs/drawing'],
             configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
             icon: ListTodo,
+          },
+          {
+            title: t('Image Generation'),
+            url: '/draw',
+            icon: Paintbrush,
           },
         ],
       },

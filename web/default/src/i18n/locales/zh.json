@@ -1777,7 +1777,7 @@
     "If the affinity channel fails and retry succeeds on another channel, update affinity to the successful channel.": "如果亲和到的渠道失败，重试到其他渠道成功后，将亲和更新到成功的渠道。",
     "Ignored upstream models": "已忽略上游模型",
     "Image": "图片",
-    "Image Generation": "图片生成",
+    "Image Generation": "绘图功能",
     "Image generated successfully": "图片生成成功",
     "Image In": "图像输入",
     "Image input": "图片输入",
