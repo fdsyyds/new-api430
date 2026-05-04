@@ -10,7 +10,7 @@ import {
   Spin,
   Toast,
 } from '@douyinfe/semi-ui';
-import { Download, ImageIcon, Trash2, WandSparkles } from 'lucide-react';
+import { Download, History, ImageIcon, Trash2, WandSparkles, X } from 'lucide-react';
 import { API } from '../../helpers/api';
 
 const { Title, Text } = Typography;
@@ -370,6 +370,7 @@ const Draw = () => {
     initialGenerationSession.generationItems,
   );
   const [history, setHistory] = useState([]);
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [historyPreviewRecord, setHistoryPreviewRecord] = useState(null);
   const [activeGenerationCount, setActiveGenerationCount] = useState(
     initialGenerationSession.activeGenerationCount,
@@ -389,9 +390,9 @@ const Draw = () => {
   const previewGridClass = useMemo(() => {
     if (generationItems.length === 1) return 'grid min-h-full place-items-center';
     if (generationItems.length === 2) {
-      return 'grid min-h-full grid-cols-1 items-center gap-4 md:grid-cols-2';
+      return 'grid min-h-full grid-cols-1 items-start gap-4 md:grid-cols-2';
     }
-    return 'grid min-h-full grid-cols-1 items-center gap-4 md:grid-cols-3';
+    return 'grid min-h-full grid-cols-1 items-start gap-4 md:grid-cols-3';
   }, [generationItems.length]);
 
   const previewItemClass = useMemo(
@@ -733,14 +734,22 @@ const Draw = () => {
     }
   }, []);
 
+  const handleHideGenerationItem = useCallback((id) => {
+    setSessionGenerationItems((current) =>
+      current.filter((item) => item.id !== id),
+    );
+  }, []);
+
   const handleClearHistory = useCallback(async () => {
     if (!window.confirm(t('确认清空所有图片历史吗？'))) return;
     await clearUserHistory(userId);
     setSessionHistoryRecords([]);
+    setHistoryPanelOpen(false);
     setHistoryPreviewRecord(null);
   }, [t, userId]);
 
   const handleOpenHistoryRecord = useCallback((record) => {
+    setHistoryPanelOpen(false);
     setHistoryPreviewRecord(record);
   }, []);
 
@@ -962,11 +971,11 @@ const Draw = () => {
       </Card>
 
       <Card
-        className='min-h-0 overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
+        className='relative min-h-0 overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
         bodyStyle={{ height: '100%', padding: 20 }}
       >
         <div className='flex h-full min-h-0 flex-col'>
-          <div className='mb-4 flex flex-col gap-4 border-b border-[#edf1f3] pb-4 xl:flex-row xl:items-start xl:justify-between'>
+          <div className='mb-4 border-b border-[#edf1f3] pb-4 pr-14'>
             <div>
               <Title heading={5} className='mb-1 text-[#1f2a30]'>
                 {t('生成预览')}
@@ -975,8 +984,16 @@ const Draw = () => {
                 {t('最多同时生成3张图片')}
               </Text>
             </div>
+          </div>
 
-            <div className='w-full rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3 xl:w-[24rem]'>
+          <Button
+            className='absolute right-5 top-5 size-11 rounded-full border border-[#cfe3df] bg-[#eef8f5] text-[#0f766e] shadow-sm'
+            icon={<History size={18} />}
+            onClick={() => setHistoryPanelOpen((open) => !open)}
+          />
+
+          {historyPanelOpen && (
+            <div className='absolute right-5 top-20 z-10 w-[24rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 shadow-lg'>
               <div className='mb-1 flex items-center justify-between'>
                 <Text strong className='text-[#27343b]'>{t('历史记录')}</Text>
                 <Button
@@ -1040,7 +1057,7 @@ const Draw = () => {
                 </div>
               )}
             </div>
-          </div>
+          )}
 
           <div className='min-h-0 flex-1 overflow-y-auto rounded-xl bg-[#f7fafb] p-4'>
             {error && (
@@ -1067,6 +1084,14 @@ const Draw = () => {
                       key={item.id}
                       className={`${previewItemClass} group relative overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm transition-shadow hover:shadow-md`}
                     >
+                      <Button
+                        size='small'
+                        type='tertiary'
+                        className='absolute right-3 top-3 z-10 rounded-full bg-white/90 shadow-sm'
+                        icon={<X size={14} />}
+                        onClick={() => handleHideGenerationItem(item.id)}
+                      />
+
                       {item.status === 'loading' && (
                         <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-3 bg-[#f4f8f9] px-4 text-center'>
                           <Spin size='large' />
@@ -1089,7 +1114,7 @@ const Draw = () => {
                             alt={`Generated ${index + 1}`}
                             className='w-full object-contain'
                           />
-                          <div className='absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100'>
+                          <div className='absolute right-14 top-3 opacity-0 transition-opacity group-hover:opacity-100'>
                             <Button
                               size='small'
                               className='rounded-md shadow-sm'
