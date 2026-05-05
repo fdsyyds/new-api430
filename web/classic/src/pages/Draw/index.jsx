@@ -808,7 +808,7 @@ const Draw = () => {
     );
 
     try {
-      const requestConfig = { timeout: 300000 };
+      const requestConfig = { timeout: 300000, skipErrorHandler: true };
       const res =
         mode === 'edit'
           ? await API.post(
