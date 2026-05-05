@@ -366,6 +366,14 @@ function cleanPolishedPrompt(content) {
     .trim();
 }
 
+function normalizeDrawErrorMessage(message, t) {
+  const text = String(message || '');
+  if (text.toLowerCase().includes('stream disconnected before completion')) {
+    return t('请修改提示词或者将尺寸改为Auto');
+  }
+  return text;
+}
+
 const Draw = () => {
   const { t } = useTranslation();
   const userId = getCurrentUserId();
@@ -639,7 +647,13 @@ const Draw = () => {
       setPrompt(polished);
       Toast.success(t('提示词已润色'));
     } catch (err) {
-      Toast.error(err?.response?.data?.error?.message || err?.message || t('提示词润色失败'));
+      const msg = normalizeDrawErrorMessage(
+        err?.response?.data?.error?.message ||
+          err?.message ||
+          t('提示词润色失败'),
+        t,
+      );
+      Toast.error(msg);
     } finally {
       setIsPolishing(false);
     }
@@ -753,10 +767,12 @@ const Draw = () => {
       }
       Toast.success(t('图片生成成功'));
     } catch (err) {
-      const msg =
+      const msg = normalizeDrawErrorMessage(
         err?.response?.data?.error?.message ||
-        err?.message ||
-        t('生成失败');
+          err?.message ||
+          t('生成失败'),
+        t,
+      );
       setSessionGenerationItems((current) =>
         current.map((item) =>
           item.id === taskId
