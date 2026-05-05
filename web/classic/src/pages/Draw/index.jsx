@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
@@ -403,6 +403,8 @@ const Draw = () => {
   );
   const [isPolishing, setIsPolishing] = useState(false);
   const [error, setError] = useState(null);
+  const historyButtonRef = useRef(null);
+  const historyPanelRef = useRef(null);
 
   const groupOptions = useMemo(
     () =>
@@ -539,6 +541,29 @@ const Draw = () => {
     size,
     userId,
   ]);
+
+  useEffect(() => {
+    if (!historyPanelOpen) return undefined;
+
+    const handleOutsideClick = (event) => {
+      const target = event.target;
+      if (
+        historyButtonRef.current?.contains(target) ||
+        historyPanelRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setHistoryPanelOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [historyPanelOpen]);
 
   useEffect(() => {
     API.get('/api/user/self/groups').then((res) => {
@@ -1052,16 +1077,19 @@ const Draw = () => {
             </div>
           </div>
 
-          <Button
-            className='absolute right-5 top-5 rounded-full border border-[#cfe3df] bg-white px-3 py-2 text-[#111827] shadow-sm'
-            icon={<History size={18} />}
-            onClick={() => setHistoryPanelOpen((open) => !open)}
-          >
-            {t('历史记录')}
-          </Button>
+          <div ref={historyButtonRef} className='absolute right-5 top-5'>
+            <Button
+              className='rounded-full border border-[#cfe3df] bg-white px-3 py-2 text-[#111827] shadow-sm'
+              icon={<History size={18} />}
+              onClick={() => setHistoryPanelOpen((open) => !open)}
+            >
+              {t('历史记录')}
+            </Button>
+          </div>
 
           {historyPanelOpen && (
             <div
+              ref={historyPanelRef}
               className='absolute right-5 top-20 z-50 w-[32rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 text-[#111827] shadow-xl'
               style={{ backgroundColor: '#ffffff', color: '#111827' }}
             >
