@@ -26,7 +26,7 @@ const SIZE_OPTIONS = [
 ];
 
 const QUALITY_OPTIONS = ['high', 'medium', 'low', 'auto'];
-const DRAW_HISTORY_LIMIT = 5;
+const DRAW_HISTORY_LIMIT = 10;
 const DRAW_GENERATION_COUNT = 1;
 const MAX_CONCURRENT_GENERATIONS = 3;
 const DRAW_HISTORY_DB = 'new-api-classic-draw-history';
@@ -829,10 +829,11 @@ const Draw = () => {
     <>
       <div className='mt-[60px] grid gap-5 bg-[#f4f7f8] p-4 lg:grid-cols-[31rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
       <Card
-        className='min-h-0 overflow-y-auto rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
-        bodyStyle={{ padding: 20 }}
+        className='min-h-0 overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
+        bodyStyle={{ height: '100%', padding: 0 }}
       >
-        <div className='mb-5 flex items-center justify-between border-b border-[#edf1f3] pb-4'>
+        <div className='flex h-full min-h-0 flex-col'>
+        <div className='flex items-center justify-between border-b border-[#edf1f3] px-5 py-4'>
           <Title heading={5} className='mb-0'>
             {t('绘图功能')}
           </Title>
@@ -841,7 +842,8 @@ const Draw = () => {
           </div>
         </div>
 
-        <div className='flex flex-col gap-5'>
+        <div className='min-h-0 flex-1 overflow-y-auto px-5 py-5'>
+          <div className='flex flex-col gap-5'>
           <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
             <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('模式')}</Text>
             <Select
@@ -1004,7 +1006,10 @@ const Draw = () => {
             </div>
           </div>
 
-          <div>
+          </div>
+        </div>
+
+          <div className='border-t border-[#edf1f3] bg-white px-5 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.05)]'>
             <Button
               theme='solid'
               type='primary'
@@ -1074,7 +1079,7 @@ const Draw = () => {
                 </Button>
               </div>
               <Text className='mb-3 block text-xs text-[#111827]'>
-                {t('历史记录只保存最近5张图片，多余图片会自动删除')}
+                {t('历史记录只保存最近10张图片，多余图片会自动删除')}
               </Text>
               {history.length === 0 ? (
                 <div className='rounded-lg border border-dashed border-[#c7d2d8] bg-white p-3 text-center'>
