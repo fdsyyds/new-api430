@@ -1062,7 +1062,7 @@ const Draw = () => {
 
           {historyPanelOpen && (
             <div
-              className='absolute right-5 top-20 z-10 w-[24rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 text-[#111827] shadow-lg'
+              className='absolute right-5 top-20 z-50 w-[32rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 text-[#111827] shadow-xl'
               style={{ backgroundColor: '#ffffff', color: '#111827' }}
             >
               <div className='mb-1 flex items-center justify-between'>
@@ -1115,11 +1115,11 @@ const Draw = () => {
                             </div>
                             <div className='line-clamp-2'>{record.prompt}</div>
                           </button>
-                          <div className='flex shrink-0 flex-col gap-1'>
+                          <div className='flex shrink-0 items-center gap-1'>
                             <Button
                               size='small'
                               type='tertiary'
-                              className='rounded-md'
+                              className='rounded-md whitespace-nowrap'
                               icon={<WandSparkles size={14} />}
                               disabled={!src}
                               onClick={() =>
