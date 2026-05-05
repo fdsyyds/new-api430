@@ -16,6 +16,7 @@ import { API } from '../../helpers/api';
 const { Title, Text } = Typography;
 
 const SIZE_OPTIONS = [
+  { label: '自动（Auto）', value: 'auto' },
   { label: '1024x1024（1K 方图）', value: '1024x1024' },
   { label: '1536x1024（1.5K 横图）', value: '1536x1024' },
   { label: '1024x1536（1.5K 竖图）', value: '1024x1536' },
