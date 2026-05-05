@@ -171,6 +171,9 @@ async function trimHistory(userId) {
         images: Array.isArray(record.images)
           ? record.images.slice(0, remaining)
           : record.images,
+        thumbnails: Array.isArray(record.thumbnails)
+          ? record.thumbnails.slice(0, remaining)
+          : record.thumbnails,
       });
       imageCount = DRAW_HISTORY_LIMIT;
       return;
@@ -242,12 +245,13 @@ function downloadBase64Image(b64, filename) {
 
 function getImageSource(item) {
   if (!item) return '';
-  return item.b64_json ? `data:image/png;base64,${item.b64_json}` : item.url || '';
+  const mimeType = item.mime_type || item.type || 'image/png';
+  return item.b64_json ? `data:${mimeType};base64,${item.b64_json}` : item.url || '';
 }
 
 async function imageItemToFile(item, filename) {
   if (item?.b64_json) {
-    const blob = base64ToBlob(item.b64_json);
+    const blob = base64ToBlob(item.b64_json, item.mime_type || item.type || 'image/png');
     return new File([blob], filename, { type: blob.type || 'image/png' });
   }
 
@@ -263,6 +267,101 @@ async function imageItemToFile(item, filename) {
   }
 
   throw new Error('无法读取历史图片');
+}
+
+function getHistoryThumbnailSource(record, index = 0) {
+  return (
+    getImageSource(record?.thumbnails?.[index]) ||
+    getImageSource(record?.images?.[index])
+  );
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+async function createHistoryThumbnail(imageItem, maxSize = 128) {
+  const src = getImageSource(imageItem);
+  if (!src) return null;
+
+  const image = await loadImageElement(src);
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  if (!width || !height) return null;
+
+  const ratio = Math.min(maxSize / width, maxSize / height, 1);
+  const targetWidth = Math.max(1, Math.round(width * ratio));
+  const targetHeight = Math.max(1, Math.round(height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, targetWidth, targetHeight);
+  context.drawImage(image, 0, 0, targetWidth, targetHeight);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+  const [, b64 = ''] = dataUrl.split(',');
+  return b64 ? { b64_json: b64, mime_type: 'image/jpeg' } : null;
+}
+
+async function createHistoryThumbnails(images) {
+  const items = Array.isArray(images) ? images : [];
+  return Promise.all(
+    items.map(async (item) => {
+      try {
+        return await createHistoryThumbnail(item);
+      } catch {
+        return null;
+      }
+    }),
+  );
+}
+
+function needsHistoryThumbnails(record) {
+  return (
+    Array.isArray(record?.images) &&
+    record.images.some((_, index) => !record.thumbnails?.[index])
+  );
+}
+
+async function backfillHistoryThumbnails(userId, records) {
+  const recordsToUpdate = [];
+
+  for (const record of Array.isArray(records) ? records : []) {
+    if (!needsHistoryThumbnails(record)) continue;
+
+    const generatedThumbnails = await createHistoryThumbnails(record.images);
+    const thumbnails = record.images.map(
+      (_, index) =>
+        record.thumbnails?.[index] ||
+        generatedThumbnails[index] ||
+        null,
+    );
+
+    if (thumbnails.some(Boolean)) {
+      recordsToUpdate.push({
+        ...record,
+        thumbnails,
+      });
+    }
+  }
+
+  if (recordsToUpdate.length === 0) return records;
+
+  await withHistoryStore('readwrite', (store) => {
+    recordsToUpdate.forEach((record) => store.put(record));
+  });
+
+  return trimHistory(userId);
 }
 
 function toDisplayItems(images, idPrefix, promptText = '') {
@@ -596,8 +695,11 @@ const Draw = () => {
   }, [loadGroupModels, polishGroup]);
 
   useEffect(() => {
+    let cancelled = false;
+
     trimHistory(userId)
       .then((records) => {
+        if (cancelled) return;
         setSessionHistoryRecords(records);
         if (getDrawGenerationSnapshot().generationItems.length === 0) {
           setSessionGenerationItems(
@@ -608,8 +710,25 @@ const Draw = () => {
             ),
           );
         }
+
+        if (records.some(needsHistoryThumbnails)) {
+          window.setTimeout(() => {
+            if (cancelled) return;
+            backfillHistoryThumbnails(userId, records)
+              .then((updatedRecords) => {
+                if (!cancelled) setSessionHistoryRecords(updatedRecords);
+              })
+              .catch(() => {});
+          }, 300);
+        }
       })
-      .catch(() => setHistory([]));
+      .catch(() => {
+        if (!cancelled) setHistory([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   const handlePolishPrompt = useCallback(async () => {
@@ -747,6 +866,7 @@ const Draw = () => {
       );
 
       try {
+        const thumbnails = await createHistoryThumbnails(resultImages);
         const records = await saveHistory({
           id: taskId,
           userId,
@@ -759,6 +879,7 @@ const Draw = () => {
           quality,
           n: DRAW_GENERATION_COUNT,
           images: resultImages,
+          thumbnails,
           sourceImageNames,
         });
         setSessionHistoryRecords(records);
@@ -1133,6 +1254,7 @@ const Draw = () => {
               ) : (
                 <div className='flex max-h-44 flex-col gap-2 overflow-y-auto pr-1'>
                   {history.map((record) => {
+                    const thumbnailSrc = getHistoryThumbnailSource(record, 0);
                     const src = getImageSource(record.images?.[0]);
                     return (
                       <div key={record.id} className='rounded-lg border border-[#e1e8ec] bg-white p-2 transition-colors hover:border-[#8fcac0] hover:bg-[#f5fbfa]'>
@@ -1142,8 +1264,8 @@ const Draw = () => {
                             className='size-14 shrink-0 overflow-hidden rounded-lg border border-[#d7e0e5] bg-gray-50'
                             onClick={() => handleOpenHistoryRecord(record)}
                           >
-                            {src ? (
-                              <img src={src} alt='' className='size-full object-cover' />
+                            {thumbnailSrc ? (
+                              <img src={thumbnailSrc} alt='' className='size-full object-cover' />
                             ) : (
                               <ImageIcon size={20} />
                             )}
