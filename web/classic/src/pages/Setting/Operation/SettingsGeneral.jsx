@@ -57,6 +57,7 @@ export default function GeneralSettings(props) {
     DefaultCollapseSidebar: false,
     DemoSiteEnabled: false,
     SelfUseModeEnabled: false,
+    DefaultTokenGroup: '',
     'token_setting.max_user_tokens': 1000,
   });
   const refForm = useRef();
@@ -126,6 +127,20 @@ export default function GeneralSettings(props) {
       handleFieldChange('general_setting.custom_currency_exchange_rate')(val);
     }
   };
+
+  const userUsableGroupOptions = useMemo(() => {
+    try {
+      const raw = props.options?.UserUsableGroups;
+      if (!raw) return [];
+      const groups = JSON.parse(raw);
+      return Object.entries(groups).map(([key, desc]) => ({
+        value: key,
+        label: desc ? `${key} - ${desc}` : key,
+      }));
+    } catch {
+      return [];
+    }
+  }, [props.options]);
 
   const showTokensOption = useMemo(() => {
     const initialType = props.options?.['general_setting.quota_display_type'];
@@ -388,6 +403,20 @@ export default function GeneralSettings(props) {
                   checkedText='｜'
                   uncheckedText='〇'
                   onChange={handleFieldChange('SelfUseModeEnabled')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Select
+                  field={'DefaultTokenGroup'}
+                  label={t('默认令牌分组')}
+                  extraText={t('令牌未设置分组时使用此分组，为空则使用用户自身分组')}
+                  placeholder={t('使用用户分组（默认）')}
+                  onChange={handleFieldChange('DefaultTokenGroup')}
+                  showClear
+                  optionList={[
+                    { value: '', label: t('使用用户分组（默认）') },
+                    ...userUsableGroupOptions,
+                  ]}
                 />
               </Col>
             </Row>
