@@ -148,9 +148,13 @@ const EditTokenModal = (props) => {
         }
       }
       setGroups(localGroupOptions);
-      // if (statusState?.status?.default_use_auto_group && formApiRef.current) {
-      //   formApiRef.current.setValue('group', 'auto');
-      // }
+      // 创建令牌时，自动选中管理员设置的默认令牌分组
+      if (!isEdit && statusState?.status?.default_token_group && formApiRef.current) {
+        const defaultGroup = statusState.status.default_token_group;
+        if (localGroupOptions.some((g) => g.value === defaultGroup)) {
+          formApiRef.current.setValue('group', defaultGroup);
+        }
+      }
     } else {
       showError(t(message));
     }
