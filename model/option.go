@@ -122,6 +122,7 @@ func InitOptionMap() {
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
+	common.OptionMap["DefaultTokenGroup"] = operation_setting.DefaultTokenGroup
 	common.OptionMap["PayMethods"] = operation_setting.PayMethods2JsonString()
 	common.OptionMap["GitHubClientId"] = ""
 	common.OptionMap["GitHubClientSecret"] = ""
@@ -523,6 +524,8 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateAudioCompletionRatioByJSONString(value)
 	case "TopUpLink":
 		common.TopUpLink = value
+	case "DefaultTokenGroup":
+		operation_setting.DefaultTokenGroup = value
 	//case "ChatLink":
 	//	common.ChatLink = value
 	//case "ChatLink2":

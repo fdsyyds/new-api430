@@ -13,9 +13,17 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { SettingsSection } from '../components/settings-section'
 import { useResetForm } from '../hooks/use-reset-form'
+import { useSystemOptions } from '../hooks/use-system-options'
 import { useUpdateOption } from '../hooks/use-update-option'
 
 const behaviorSchema = z.object({
@@ -23,6 +31,7 @@ const behaviorSchema = z.object({
   DefaultCollapseSidebar: z.boolean(),
   DemoSiteEnabled: z.boolean(),
   SelfUseModeEnabled: z.boolean(),
+  DefaultTokenGroup: z.string(),
 })
 
 type BehaviorFormValues = z.infer<typeof behaviorSchema>
@@ -36,13 +45,32 @@ export function SystemBehaviorSection({
 }: SystemBehaviorSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const { data: optionsData } = useSystemOptions()
+
+  const userUsableGroups: Record<string, string> = (() => {
+    const raw = optionsData?.data?.find(
+      (o) => o.key === 'UserUsableGroups'
+    )?.value
+    if (!raw) return {}
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return {}
+    }
+  })()
 
   const form = useForm({
     resolver: zodResolver(behaviorSchema),
-    defaultValues,
+    defaultValues: {
+      ...defaultValues,
+      DefaultTokenGroup: defaultValues.DefaultTokenGroup || '__none__',
+    },
   })
 
-  useResetForm(form, defaultValues)
+  useResetForm(form, {
+    ...defaultValues,
+    DefaultTokenGroup: defaultValues.DefaultTokenGroup || '__none__',
+  })
 
   const onSubmit = async (data: BehaviorFormValues) => {
     const updates = Object.entries(data).filter(
@@ -50,7 +78,8 @@ export function SystemBehaviorSection({
     )
 
     for (const [key, value] of updates) {
-      await updateOption.mutateAsync({ key, value })
+      const submitValue = key === 'DefaultTokenGroup' && value === '__none__' ? '' : value
+      await updateOption.mutateAsync({ key, value: submitValue })
     }
   }
 
@@ -152,6 +181,40 @@ export function SystemBehaviorSection({
                     onCheckedChange={field.onChange}
                   />
                 </FormControl>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='DefaultTokenGroup'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Default Token Group')}</FormLabel>
+                <FormControl>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue placeholder={t('Use user group (default)')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='__none__'>
+                        {t('Use user group (default)')}
+                      </SelectItem>
+                      {Object.entries(userUsableGroups).map(([key, desc]) => (
+                        <SelectItem key={key} value={key}>
+                          {key}{desc ? ` - ${desc}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+                <FormDescription>
+                  {t('Default group used when token has no group assigned. Falls back to user group if not set.')}
+                </FormDescription>
+                <FormMessage />
               </FormItem>
             )}
           />

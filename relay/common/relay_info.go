@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -429,7 +430,10 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	//paramOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelParamOverride)
 
 	tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
-	// 当令牌分组为空时，表示使用用户分组
+	// 当令牌分组为空时，优先使用管理员设置的默认令牌分组，其次使用用户分组
+	if tokenGroup == "" {
+		tokenGroup = operation_setting.DefaultTokenGroup
+	}
 	if tokenGroup == "" {
 		tokenGroup = common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	}
