@@ -79,7 +79,7 @@ const EditTokenModal = (props) => {
     model_limits_enabled: false,
     model_limits: [],
     allow_ips: '',
-    group: '',
+    group: statusState?.status?.default_token_group || '',
     cross_group_retry: false,
     tokenCount: 1,
   });
