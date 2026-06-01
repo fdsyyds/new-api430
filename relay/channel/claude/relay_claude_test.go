@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/stretchr/testify/require"
 )
@@ -273,6 +274,73 @@ func TestBuildOpenAIStyleUsageFromClaudeUsageDefaultsAggregateCacheCreationTo5m(
 
 	require.Equal(t, 50, openAIUsage.ClaudeCacheCreation5mTokens)
 	require.Equal(t, 0, openAIUsage.ClaudeCacheCreation1hTokens)
+}
+
+func TestMergeClaudeCacheIntoUsage(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     213,
+		CompletionTokens: 36,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         172108,
+			CachedCreationTokens: 3089,
+		},
+		UsageSemantic: "anthropic",
+	}
+
+	merged := mergeClaudeCacheIntoUsage(usage)
+
+	require.Equal(t, 175410, merged.PromptTokens)
+	require.Equal(t, 175410, merged.InputTokens)
+	require.Equal(t, 175446, merged.TotalTokens)
+	require.Equal(t, 0, merged.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 0, merged.PromptTokensDetails.CachedCreationTokens)
+}
+
+func TestMergeClaudeCacheIntoClaudeUsage(t *testing.T) {
+	usage := &dto.ClaudeUsage{
+		InputTokens:              213,
+		OutputTokens:             36,
+		CacheReadInputTokens:     172108,
+		CacheCreationInputTokens: 3089,
+	}
+
+	mergeClaudeCacheIntoClaudeUsage(usage)
+
+	require.Equal(t, 175410, usage.InputTokens)
+	require.Equal(t, 36, usage.OutputTokens)
+	require.Equal(t, 0, usage.CacheReadInputTokens)
+	require.Equal(t, 0, usage.CacheCreationInputTokens)
+	require.Nil(t, usage.CacheCreation)
+}
+
+func TestMergedClaudeUsageMarshalHidesCacheFields(t *testing.T) {
+	usage := &dto.ClaudeUsage{
+		InputTokens:              213,
+		OutputTokens:             36,
+		CacheReadInputTokens:     172108,
+		CacheCreationInputTokens: 3089,
+	}
+
+	mergeClaudeCacheIntoClaudeUsage(usage)
+	jsonData, err := common.Marshal(usage)
+	require.NoError(t, err)
+	jsonText := string(jsonData)
+
+	require.Contains(t, jsonText, `"input_tokens":175410`)
+	require.NotContains(t, jsonText, "cache_read_input_tokens")
+	require.NotContains(t, jsonText, "cache_creation_input_tokens")
+	require.NotContains(t, jsonText, "cache_creation")
+}
+
+func TestRemoveOpenAIUsageCacheFields(t *testing.T) {
+	raw := `{"usage":{"prompt_tokens":175410,"prompt_tokens_details":{"cached_tokens":0,"cached_creation_tokens":0,"text_tokens":0},"claude_cache_creation_5_m_tokens":0,"claude_cache_creation_1_h_tokens":0}}`
+
+	cleaned := removeOpenAIUsageCacheFields(raw)
+
+	require.NotContains(t, cleaned, "cached_tokens")
+	require.NotContains(t, cleaned, "cached_creation_tokens")
+	require.NotContains(t, cleaned, "claude_cache_creation")
+	require.Contains(t, cleaned, `"prompt_tokens":175410`)
 }
 
 func TestRequestOpenAI2ClaudeMessage_IgnoresUnsupportedFileContent(t *testing.T) {

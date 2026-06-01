@@ -81,7 +81,7 @@ func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *d
 	return usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0
 }
 
-func isClaudeCacheBillingEnabled(relayInfo *relaycommon.RelayInfo) bool {
+func IsClaudeCacheBillingEnabled(relayInfo *relaycommon.RelayInfo) bool {
 	if relayInfo != nil && relayInfo.ChannelMeta != nil {
 		switch relayInfo.ChannelOtherSettings.ClaudeCacheBillingMode {
 		case dto.ClaudeCacheBillingModeEnabled:
@@ -91,6 +91,13 @@ func isClaudeCacheBillingEnabled(relayInfo *relaycommon.RelayInfo) bool {
 		}
 	}
 	return model_setting.GetClaudeSettings().CacheBillingEnabled
+}
+
+func ShouldHideClaudeCacheBilling(relayInfo *relaycommon.RelayInfo, usageSemantic string) bool {
+	if usageSemantic != "anthropic" {
+		return false
+	}
+	return !IsClaudeCacheBillingEnabled(relayInfo)
 }
 
 func hideClaudeCacheBilling(summary *textQuotaSummary) {
@@ -256,7 +263,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		summary.PromptTokens -= summary.CacheCreationTokens
 	}
 
-	if summary.IsClaudeUsageSemantic && !isClaudeCacheBillingEnabled(relayInfo) {
+	if ShouldHideClaudeCacheBilling(relayInfo, summary.UsageSemantic) {
 		hideClaudeCacheBilling(&summary)
 	}
 

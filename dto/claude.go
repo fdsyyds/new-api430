@@ -556,13 +556,13 @@ func (c *ClaudeResponse) GetClaudeError() *types.ClaudeError {
 
 type ClaudeUsage struct {
 	InputTokens              int                       `json:"input_tokens"`
-	CacheCreationInputTokens int                       `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int                       `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int                       `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int                       `json:"cache_read_input_tokens,omitempty"`
 	OutputTokens             int                       `json:"output_tokens"`
 	CacheCreation            *ClaudeCacheCreationUsage `json:"cache_creation,omitempty"`
 	// claude cache 1h
-	ClaudeCacheCreation5mTokens int                  `json:"claude_cache_creation_5_m_tokens"`
-	ClaudeCacheCreation1hTokens int                  `json:"claude_cache_creation_1_h_tokens"`
+	ClaudeCacheCreation5mTokens int                  `json:"claude_cache_creation_5_m_tokens,omitempty"`
+	ClaudeCacheCreation1hTokens int                  `json:"claude_cache_creation_1_h_tokens,omitempty"`
 	ServerToolUse               *ClaudeServerToolUse `json:"server_tool_use,omitempty"`
 }
 

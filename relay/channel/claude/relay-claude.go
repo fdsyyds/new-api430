@@ -624,6 +624,39 @@ func buildOpenAIStyleUsageFromClaudeUsage(usage *dto.Usage) dto.Usage {
 	return clone
 }
 
+func mergeClaudeCacheIntoUsage(usage *dto.Usage) *dto.Usage {
+	if usage == nil {
+		return nil
+	}
+	clone := *usage
+	cacheCreationTokens := cacheCreationTokensForOpenAIUsage(usage)
+	clone.PromptTokens += clone.PromptTokensDetails.CachedTokens + cacheCreationTokens
+	clone.InputTokens = clone.PromptTokens
+	clone.TotalTokens = clone.PromptTokens + clone.CompletionTokens
+	clone.PromptTokensDetails.CachedTokens = 0
+	clone.PromptTokensDetails.CachedCreationTokens = 0
+	clone.ClaudeCacheCreation5mTokens = 0
+	clone.ClaudeCacheCreation1hTokens = 0
+	return &clone
+}
+
+func mergeClaudeCacheIntoClaudeUsage(usage *dto.ClaudeUsage) {
+	if usage == nil {
+		return
+	}
+	cacheCreationTokens := usage.GetCacheCreationTotalTokens()
+	usage.InputTokens += usage.CacheReadInputTokens + cacheCreationTokens
+	usage.CacheReadInputTokens = 0
+	usage.CacheCreationInputTokens = 0
+	usage.CacheCreation = nil
+	usage.ClaudeCacheCreation5mTokens = 0
+	usage.ClaudeCacheCreation1hTokens = 0
+}
+
+func shouldHideClaudeCacheUsage(info *relaycommon.RelayInfo) bool {
+	return service.ShouldHideClaudeCacheBilling(info, "anthropic")
+}
+
 func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo *ClaudeResponseInfo) *dto.ClaudeUsage {
 	usage := &dto.ClaudeUsage{}
 	if claudeResponse != nil && claudeResponse.Usage != nil {
@@ -692,6 +725,57 @@ func patchClaudeMessageDeltaUsageData(data string, usage *dto.ClaudeUsage) strin
 	}
 
 	return data
+}
+
+func removeClaudeCacheUsageFields(data string, usagePath string) string {
+	if data == "" || usagePath == "" {
+		return data
+	}
+	paths := []string{
+		usagePath + ".cache_read_input_tokens",
+		usagePath + ".cache_creation_input_tokens",
+		usagePath + ".cache_creation",
+	}
+	for _, path := range paths {
+		patchedData, err := sjson.Delete(data, path)
+		if err != nil {
+			continue
+		}
+		data = patchedData
+	}
+	return data
+}
+
+func removeOpenAIUsageCacheFields(data string) string {
+	if data == "" {
+		return data
+	}
+	paths := []string{
+		"usage.prompt_tokens_details.cached_tokens",
+		"usage.prompt_tokens_details.cached_creation_tokens",
+		"usage.prompt_cache_hit_tokens",
+		"usage.claude_cache_creation_5_m_tokens",
+		"usage.claude_cache_creation_1_h_tokens",
+	}
+	for _, path := range paths {
+		patchedData, err := sjson.Delete(data, path)
+		if err != nil {
+			continue
+		}
+		data = patchedData
+	}
+	return data
+}
+
+func sendOpenAIObjectData(c *gin.Context, object interface{}, hideCache bool) error {
+	if !hideCache {
+		return helper.ObjectData(c, object)
+	}
+	jsonData, err := common.Marshal(object)
+	if err != nil {
+		return err
+	}
+	return helper.StringData(c, removeOpenAIUsageCacheFields(string(jsonData)))
 }
 
 func setMessageDeltaUsageInt(data string, path string, localValue int) string {
@@ -806,12 +890,24 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			// message_start, 获取usage
 			if claudeResponse.Message != nil {
 				info.UpstreamModelName = claudeResponse.Message.Model
+				if shouldHideClaudeCacheUsage(info) {
+					mergeClaudeCacheIntoClaudeUsage(claudeResponse.Message.Usage)
+					if responseData, marshalErr := common.Marshal(claudeResponse); marshalErr == nil {
+						data = string(responseData)
+					}
+				}
 			}
 		} else if claudeResponse.Type == "message_delta" {
 			// 确保 message_delta 的 usage 包含完整的 input_tokens 和 cache 相关字段
 			// 解决 AWS Bedrock 等上游返回的 message_delta 缺少这些字段的问题
 			if !shouldSkipClaudeMessageDeltaUsagePatch(info) {
 				data = patchClaudeMessageDeltaUsageData(data, buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo))
+			}
+			if shouldHideClaudeCacheUsage(info) {
+				patchUsage := buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo)
+				mergeClaudeCacheIntoClaudeUsage(patchUsage)
+				data = patchClaudeMessageDeltaUsageData(data, patchUsage)
+				data = removeClaudeCacheUsageFields(data, "usage")
 			}
 		}
 		helper.ClaudeChunkData(c, claudeResponse, data)
@@ -857,9 +953,14 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 		//
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		if info.ShouldIncludeUsage {
-			openAIUsage := buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
+			finalUsage := claudeInfo.Usage
+			hideCacheUsage := shouldHideClaudeCacheUsage(info)
+			if hideCacheUsage {
+				finalUsage = mergeClaudeCacheIntoUsage(claudeInfo.Usage)
+			}
+			openAIUsage := buildOpenAIStyleUsageFromClaudeUsage(finalUsage)
 			response := helper.GenerateFinalUsageResponse(claudeInfo.ResponseId, claudeInfo.Created, info.UpstreamModelName, openAIUsage)
-			err := helper.ObjectData(c, response)
+			err := sendOpenAIObjectData(c, response, hideCacheUsage)
 			if err != nil {
 				common.SysLog("send final response failed: " + err.Error())
 			}
@@ -918,13 +1019,29 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
 		openaiResponse := ResponseClaude2OpenAI(&claudeResponse)
-		openaiResponse.Usage = buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
+		finalUsage := claudeInfo.Usage
+		hideCacheUsage := shouldHideClaudeCacheUsage(info)
+		if hideCacheUsage {
+			finalUsage = mergeClaudeCacheIntoUsage(claudeInfo.Usage)
+		}
+		openaiResponse.Usage = buildOpenAIStyleUsageFromClaudeUsage(finalUsage)
 		responseData, err = json.Marshal(openaiResponse)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
+		if hideCacheUsage {
+			responseData = common.StringToByteSlice(removeOpenAIUsageCacheFields(string(responseData)))
+		}
 	case types.RelayFormatClaude:
-		responseData = data
+		if shouldHideClaudeCacheUsage(info) {
+			mergeClaudeCacheIntoClaudeUsage(claudeResponse.Usage)
+			responseData, err = common.Marshal(claudeResponse)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeBadResponseBody)
+			}
+		} else {
+			responseData = data
+		}
 	}
 
 	if claudeResponse.Usage != nil && claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
