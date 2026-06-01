@@ -107,6 +107,51 @@ func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.
 	require.Equal(t, 118, summary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryHidesClaudeCacheBillingWhenDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		RelayFormat:             types.RelayFormatClaude,
+		FinalRequestRelayFormat: types.RelayFormatClaude,
+		OriginModelName:         "claude-sonnet-4",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				ClaudeCacheBillingMode: dto.ClaudeCacheBillingModeDisabled,
+			},
+		},
+		PriceData: types.PriceData{
+			ModelRatio:         1,
+			CompletionRatio:    1,
+			CacheRatio:         0.1,
+			CacheCreationRatio: 1.25,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 1,
+			},
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     213,
+		CompletionTokens: 36,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         172108,
+			CachedCreationTokens: 3089,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.True(t, summary.ClaudeCacheBillingHidden)
+	require.Equal(t, 175410, summary.PromptTokens)
+	require.Equal(t, 36, summary.CompletionTokens)
+	require.Equal(t, 0, summary.CacheTokens)
+	require.Equal(t, 0, summary.CacheCreationTokens)
+	require.Equal(t, 175446, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummaryUsesAnthropicUsageSemanticFromUpstreamUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

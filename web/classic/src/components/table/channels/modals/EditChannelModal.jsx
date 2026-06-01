@@ -210,6 +210,7 @@ const EditChannelModal = (props) => {
     allow_inference_geo: false,
     allow_speed: false,
     claude_beta_query: false,
+    claude_cache_billing_mode: 'inherit',
     upstream_model_update_check_enabled: false,
     upstream_model_update_auto_sync_enabled: false,
     upstream_model_update_last_check_time: 0,
@@ -911,6 +912,8 @@ const EditChannelModal = (props) => {
             parsedSettings.allow_inference_geo || false;
           data.allow_speed = parsedSettings.allow_speed || false;
           data.claude_beta_query = parsedSettings.claude_beta_query || false;
+          data.claude_cache_billing_mode =
+            parsedSettings.claude_cache_billing_mode || 'inherit';
           data.upstream_model_update_check_enabled =
             parsedSettings.upstream_model_update_check_enabled === true;
           data.upstream_model_update_auto_sync_enabled =
@@ -941,6 +944,7 @@ const EditChannelModal = (props) => {
           data.allow_inference_geo = false;
           data.allow_speed = false;
           data.claude_beta_query = false;
+          data.claude_cache_billing_mode = 'inherit';
           data.upstream_model_update_check_enabled = false;
           data.upstream_model_update_auto_sync_enabled = false;
           data.upstream_model_update_last_check_time = 0;
@@ -959,6 +963,7 @@ const EditChannelModal = (props) => {
         data.allow_inference_geo = false;
         data.allow_speed = false;
         data.claude_beta_query = false;
+        data.claude_cache_billing_mode = 'inherit';
         data.upstream_model_update_check_enabled = false;
         data.upstream_model_update_auto_sync_enabled = false;
         data.upstream_model_update_last_check_time = 0;
@@ -1037,6 +1042,8 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled ||
         data.force_format ||
         data.claude_beta_query ||
+        (data.claude_cache_billing_mode &&
+          data.claude_cache_billing_mode !== 'inherit') ||
         data.system_prompt_override;
       if (hasAdvancedValues) {
         setAdvancedSettingsOpen(true);
@@ -1778,6 +1785,13 @@ const EditChannelModal = (props) => {
       settings.aws_key_type = localInputs.aws_key_type || 'ak_sk';
     }
 
+    if (localInputs.type === 14 || localInputs.type === 33) {
+      settings.claude_cache_billing_mode =
+        localInputs.claude_cache_billing_mode || 'inherit';
+    } else if ('claude_cache_billing_mode' in settings) {
+      delete settings.claude_cache_billing_mode;
+    }
+
     // type === 41 (Vertex): 始终保存 vertex_key_type 到 settings，避免编辑时被重置
     if (localInputs.type === 41) {
       settings.vertex_key_type = localInputs.vertex_key_type || 'json';
@@ -1848,6 +1862,7 @@ const EditChannelModal = (props) => {
     delete localInputs.allow_inference_geo;
     delete localInputs.allow_speed;
     delete localInputs.claude_beta_query;
+    delete localInputs.claude_cache_billing_mode;
     delete localInputs.upstream_model_update_check_enabled;
     delete localInputs.upstream_model_update_auto_sync_enabled;
     delete localInputs.upstream_model_update_last_check_time;
@@ -2517,6 +2532,25 @@ const EditChannelModal = (props) => {
 
                   {inputs.type === 14 && (
                     <Form.Switch field='claude_beta_query' label={t('Claude 强制 beta=true')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelOtherSettingsChange('claude_beta_query', value)} extraText={t('开启后，该渠道请求 Claude 时将强制追加 ?beta=true（无需客户端手动传参）')} />
+                  )}
+
+                  {(inputs.type === 14 || inputs.type === 33) && (
+                    <Form.Select
+                      field='claude_cache_billing_mode'
+                      label={t('Claude缓存读写计费')}
+                      optionList={[
+                        { label: t('继承全局'), value: 'inherit' },
+                        { label: t('开启'), value: 'enabled' },
+                        { label: t('关闭'), value: 'disabled' },
+                      ]}
+                      onChange={(value) =>
+                        handleChannelOtherSettingsChange(
+                          'claude_cache_billing_mode',
+                          value,
+                        )
+                      }
+                      extraText={t('关闭后，该渠道的Claude缓存读写token会并入普通输入token计费，用户日志不再单独展示缓存读写。')}
+                    />
                   )}
 
                   {inputs.type === 1 && (

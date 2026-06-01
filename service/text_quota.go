@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -53,6 +54,7 @@ type textQuotaSummary struct {
 	AudioInputPrice          float64
 	ImageGenerationCallPrice float64
 	ToolCallSurchargeQuota   decimal.Decimal
+	ClaudeCacheBillingHidden bool
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -77,6 +79,54 @@ func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *d
 		return false
 	}
 	return usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0
+}
+
+func isClaudeCacheBillingEnabled(relayInfo *relaycommon.RelayInfo) bool {
+	if relayInfo != nil && relayInfo.ChannelMeta != nil {
+		switch relayInfo.ChannelOtherSettings.ClaudeCacheBillingMode {
+		case dto.ClaudeCacheBillingModeEnabled:
+			return true
+		case dto.ClaudeCacheBillingModeDisabled:
+			return false
+		}
+	}
+	return model_setting.GetClaudeSettings().CacheBillingEnabled
+}
+
+func hideClaudeCacheBilling(summary *textQuotaSummary) {
+	if summary == nil {
+		return
+	}
+	cacheWriteTokens := cacheWriteTokensTotal(*summary)
+	summary.PromptTokens += summary.CacheTokens + cacheWriteTokens
+	summary.TotalTokens = summary.PromptTokens + summary.CompletionTokens
+	summary.CacheTokens = 0
+	summary.CacheCreationTokens = 0
+	summary.CacheCreationTokens5m = 0
+	summary.CacheCreationTokens1h = 0
+	summary.ClaudeCacheBillingHidden = true
+}
+
+func usageWithClaudeCacheAsPrompt(usage *dto.Usage) *dto.Usage {
+	if usage == nil {
+		return nil
+	}
+	clone := *usage
+	cacheCreationTokens := clone.PromptTokensDetails.CachedCreationTokens
+	if clone.ClaudeCacheCreation5mTokens > 0 || clone.ClaudeCacheCreation1hTokens > 0 {
+		splitTotal := clone.ClaudeCacheCreation5mTokens + clone.ClaudeCacheCreation1hTokens
+		if splitTotal > cacheCreationTokens {
+			cacheCreationTokens = splitTotal
+		}
+	}
+	clone.PromptTokens += clone.PromptTokensDetails.CachedTokens + cacheCreationTokens
+	clone.TotalTokens = clone.PromptTokens + clone.CompletionTokens
+	clone.InputTokens = clone.PromptTokens
+	clone.PromptTokensDetails.CachedTokens = 0
+	clone.PromptTokensDetails.CachedCreationTokens = 0
+	clone.ClaudeCacheCreation5mTokens = 0
+	clone.ClaudeCacheCreation1hTokens = 0
+	return &clone
 }
 
 func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary) decimal.Decimal {
@@ -204,6 +254,10 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			}
 		}
 		summary.PromptTokens -= summary.CacheCreationTokens
+	}
+
+	if summary.IsClaudeUsageSemantic && !isClaudeCacheBillingEnabled(relayInfo) {
+		hideClaudeCacheBilling(&summary)
 	}
 
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
@@ -336,7 +390,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
 			tieredUsedVars = billingexpr.UsedVars(snap.ExprString)
 		}
-		tieredOk, tieredQuota, tieredRes := TryTieredSettle(relayInfo, BuildTieredTokenParams(usage, summary.IsClaudeUsageSemantic, tieredUsedVars))
+		tieredUsage := usage
+		if summary.ClaudeCacheBillingHidden {
+			tieredUsage = usageWithClaudeCacheAsPrompt(usage)
+		}
+		tieredOk, tieredQuota, tieredRes := TryTieredSettle(relayInfo, BuildTieredTokenParams(tieredUsage, summary.IsClaudeUsageSemantic, tieredUsedVars))
 		if tieredOk {
 			tieredBillingApplied = true
 			tieredResult = tieredRes
@@ -384,7 +442,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	logContent := strings.Join(extraContent, ", ")
 	var other map[string]interface{}
-	if summary.IsClaudeUsageSemantic {
+	if summary.IsClaudeUsageSemantic && !summary.ClaudeCacheBillingHidden {
 		other = GenerateClaudeOtherInfo(ctx, relayInfo,
 			summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio,
 			summary.CacheTokens, summary.CacheRatio,
@@ -395,6 +453,18 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other["usage_semantic"] = "anthropic"
 	} else {
 		other = GenerateTextOtherInfo(ctx, relayInfo, summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio, summary.CacheTokens, summary.CacheRatio, summary.ModelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
+	}
+	if summary.ClaudeCacheBillingHidden {
+		delete(other, "claude")
+		delete(other, "cache_tokens")
+		delete(other, "cache_ratio")
+		delete(other, "cache_creation_tokens")
+		delete(other, "cache_creation_ratio")
+		delete(other, "cache_creation_tokens_5m")
+		delete(other, "cache_creation_ratio_5m")
+		delete(other, "cache_creation_tokens_1h")
+		delete(other, "cache_creation_ratio_1h")
+		delete(other, "cache_write_tokens")
 	}
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason
@@ -427,20 +497,20 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other["image_generation_call"] = true
 		other["image_generation_call_price"] = summary.ImageGenerationCallPrice
 	}
-	if summary.CacheCreationTokens > 0 {
+	if !summary.ClaudeCacheBillingHidden && summary.CacheCreationTokens > 0 {
 		other["cache_creation_tokens"] = summary.CacheCreationTokens
 		other["cache_creation_ratio"] = summary.CacheCreationRatio
 	}
-	if summary.CacheCreationTokens5m > 0 {
+	if !summary.ClaudeCacheBillingHidden && summary.CacheCreationTokens5m > 0 {
 		other["cache_creation_tokens_5m"] = summary.CacheCreationTokens5m
 		other["cache_creation_ratio_5m"] = summary.CacheCreationRatio5m
 	}
-	if summary.CacheCreationTokens1h > 0 {
+	if !summary.ClaudeCacheBillingHidden && summary.CacheCreationTokens1h > 0 {
 		other["cache_creation_tokens_1h"] = summary.CacheCreationTokens1h
 		other["cache_creation_ratio_1h"] = summary.CacheCreationRatio1h
 	}
 	cacheWriteTokens := cacheWriteTokensTotal(summary)
-	if cacheWriteTokens > 0 {
+	if !summary.ClaudeCacheBillingHidden && cacheWriteTokens > 0 {
 		// cache_write_tokens: normalized cache creation total for UI display.
 		// If split 5m/1h values are present, this is their sum; otherwise it falls back
 		// to cache_creation_tokens.

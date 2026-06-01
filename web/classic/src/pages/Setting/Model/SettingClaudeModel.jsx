@@ -65,6 +65,7 @@ export default function SettingClaudeModel(props) {
     'claude.thinking_adapter_enabled': true,
     'claude.default_max_tokens': '',
     'claude.thinking_adapter_budget_tokens_percentage': 0.8,
+    'claude.cache_billing_enabled': true,
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -204,6 +205,23 @@ export default function SettingClaudeModel(props) {
                     setInputs({
                       ...inputs,
                       'claude.thinking_adapter_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row>
+              <Col span={16}>
+                <Form.Switch
+                  label={t('Claude缓存读写单独计费与展示')}
+                  field={'claude.cache_billing_enabled'}
+                  checkedText={t('开')}
+                  uncheckedText={t('关')}
+                  extraText={t('关闭后，Claude缓存读取和缓存写入token会并入普通输入token计费，用户日志不再单独展示缓存读写。')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'claude.cache_billing_enabled': value,
                     })
                   }
                 />
