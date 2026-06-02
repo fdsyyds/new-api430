@@ -727,6 +727,15 @@ func patchClaudeMessageDeltaUsageData(data string, usage *dto.ClaudeUsage) strin
 	return data
 }
 
+func patchClaudeMessageDeltaHiddenUsageData(data string, usage *dto.ClaudeUsage) string {
+	if data == "" || usage == nil {
+		return data
+	}
+
+	data = setMessageDeltaUsageIntOverride(data, "usage.input_tokens", usage.InputTokens)
+	return removeClaudeCacheUsageFields(data, "usage")
+}
+
 func removeClaudeCacheUsageFields(data string, usagePath string) string {
 	if data == "" || usagePath == "" {
 		return data
@@ -785,6 +794,18 @@ func setMessageDeltaUsageInt(data string, path string, localValue int) string {
 
 	upstreamValue := gjson.Get(data, path)
 	if upstreamValue.Exists() && upstreamValue.Int() > 0 {
+		return data
+	}
+
+	patchedData, err := sjson.Set(data, path, localValue)
+	if err != nil {
+		return data
+	}
+	return patchedData
+}
+
+func setMessageDeltaUsageIntOverride(data string, path string, localValue int) string {
+	if localValue <= 0 {
 		return data
 	}
 
@@ -906,8 +927,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			if shouldHideClaudeCacheUsage(info) {
 				patchUsage := buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo)
 				mergeClaudeCacheIntoClaudeUsage(patchUsage)
-				data = patchClaudeMessageDeltaUsageData(data, patchUsage)
-				data = removeClaudeCacheUsageFields(data, "usage")
+				data = patchClaudeMessageDeltaHiddenUsageData(data, patchUsage)
 			}
 		}
 		helper.ClaudeChunkData(c, claudeResponse, data)

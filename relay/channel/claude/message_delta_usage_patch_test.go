@@ -45,6 +45,22 @@ func TestPatchClaudeMessageDeltaUsageDataZeroValueChecks(t *testing.T) {
 	assert.False(t, gjson.Get(patchedData, "usage.cache_creation_input_tokens").Exists())
 }
 
+func TestPatchClaudeMessageDeltaHiddenUsageDataOverridesInputAndRemovesCache(t *testing.T) {
+	originalData := `{"type":"message_delta","usage":{"output_tokens":36,"input_tokens":1,"cache_read_input_tokens":172108,"cache_creation_input_tokens":3089,"cache_creation":{"ephemeral_5m_input_tokens":3089}}}`
+	usage := &dto.ClaudeUsage{
+		InputTokens:  175410,
+		OutputTokens: 36,
+	}
+
+	patchedData := patchClaudeMessageDeltaHiddenUsageData(originalData, usage)
+
+	require.EqualValues(t, 175410, gjson.Get(patchedData, "usage.input_tokens").Int())
+	require.EqualValues(t, 36, gjson.Get(patchedData, "usage.output_tokens").Int())
+	assert.False(t, gjson.Get(patchedData, "usage.cache_read_input_tokens").Exists())
+	assert.False(t, gjson.Get(patchedData, "usage.cache_creation_input_tokens").Exists())
+	assert.False(t, gjson.Get(patchedData, "usage.cache_creation").Exists())
+}
+
 func TestShouldSkipClaudeMessageDeltaUsagePatch(t *testing.T) {
 	originGlobalPassThrough := model_setting.GetGlobalSettings().PassThroughRequestEnabled
 	t.Cleanup(func() {
