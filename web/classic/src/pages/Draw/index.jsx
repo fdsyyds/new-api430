@@ -990,25 +990,25 @@ const Draw = () => {
 
   return (
     <>
-      <div className='mt-[60px] grid gap-5 bg-[#f4f7f8] p-4 lg:grid-cols-[31rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
+      <div className='mt-[60px] grid gap-5 bg-semi-color-bg-0 p-4 lg:grid-cols-[31rem_minmax(0,1fr)]' style={{ height: 'calc(100vh - 60px)' }}>
       <Card
-        className='min-h-0 overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
+        className='min-h-0 overflow-hidden rounded-xl border border-semi-color-border bg-semi-color-bg-1 shadow-sm'
         bodyStyle={{ height: '100%', padding: 0 }}
       >
         <div className='flex h-full min-h-0 flex-col'>
-        <div className='flex items-center justify-between border-b border-[#edf1f3] px-5 py-4'>
+        <div className='flex items-center justify-between border-b border-semi-color-border px-5 py-4'>
           <Title heading={5} className='mb-0'>
             {t('绘图功能')}
           </Title>
-          <div className='rounded-full border border-[#cfe3df] bg-[#eef8f5] px-3 py-1 text-xs font-medium text-[#0f766e]'>
+          <div className='rounded-full border border-semi-color-primary-light-active bg-semi-color-primary-light-default px-3 py-1 text-xs font-medium text-semi-color-primary'>
             {activeGenerationCount}/{MAX_CONCURRENT_GENERATIONS}
           </div>
         </div>
 
         <div className='min-h-0 flex-1 overflow-y-auto px-5 py-5'>
           <div className='flex flex-col gap-5'>
-          <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
-            <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('模式')}</Text>
+          <div className='rounded-lg border border-semi-color-border bg-semi-color-fill-0 p-3'>
+            <Text className='mb-2 block text-sm font-semibold text-semi-color-text-0'>{t('模式')}</Text>
             <Select
               value={mode}
               onChange={setMode}
@@ -1020,10 +1020,10 @@ const Draw = () => {
             />
           </div>
 
-          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2 rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
-            <Text className='pb-2 text-sm font-semibold text-[#27343b]'>{t('生图模型')}</Text>
+          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2 rounded-lg border border-semi-color-border bg-semi-color-fill-0 p-3'>
+            <Text className='pb-2 text-sm font-semibold text-semi-color-text-0'>{t('生图模型')}</Text>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('分组选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-semi-color-text-2'>{t('分组选择')}</Text>
               <Select
                 value={drawGroup}
                 onChange={(value) => {
@@ -1038,7 +1038,7 @@ const Draw = () => {
               />
             </div>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('模型选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-semi-color-text-2'>{t('模型选择')}</Text>
               <Select
                 value={drawModel}
                 onChange={setDrawModel}
@@ -1051,10 +1051,10 @@ const Draw = () => {
             </div>
           </div>
 
-          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2 rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
-            <Text className='pb-2 text-sm font-semibold text-[#27343b]'>{t('提示词模型')}</Text>
+          <div className='grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-2 rounded-lg border border-semi-color-border bg-semi-color-fill-0 p-3'>
+            <Text className='pb-2 text-sm font-semibold text-semi-color-text-0'>{t('提示词模型')}</Text>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('分组选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-semi-color-text-2'>{t('分组选择')}</Text>
               <Select
                 value={polishGroup}
                 onChange={(value) => {
@@ -1069,7 +1069,7 @@ const Draw = () => {
               />
             </div>
             <div className='min-w-0'>
-              <Text className='mb-1 block text-xs font-medium text-[#6b7a83]'>{t('模型选择')}</Text>
+              <Text className='mb-1 block text-xs font-medium text-semi-color-text-2'>{t('模型选择')}</Text>
               <Select
                 value={polishModel}
                 onChange={setPolishModel}
@@ -1082,9 +1082,9 @@ const Draw = () => {
             </div>
           </div>
 
-          <div className='rounded-lg border border-[#e3e9ed] bg-white p-3 shadow-sm'>
+          <div className='rounded-lg border border-semi-color-border bg-semi-color-bg-1 p-3 shadow-sm'>
             <div className='mb-2 flex items-center justify-between'>
-              <Text className='block text-sm font-semibold text-[#27343b]'>{t('提示词')}</Text>
+              <Text className='block text-sm font-semibold text-semi-color-text-0'>{t('提示词')}</Text>
               <Button
                 size='small'
                 className='rounded-md'
@@ -1107,10 +1107,10 @@ const Draw = () => {
           </div>
 
           {mode === 'edit' && (
-            <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
-              <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('参考图片')}</Text>
+            <div className='rounded-lg border border-semi-color-border bg-semi-color-fill-0 p-3'>
+              <Text className='mb-2 block text-sm font-semibold text-semi-color-text-0'>{t('参考图片')}</Text>
               <input
-                className='block w-full rounded-lg border border-dashed border-[#b9c7cf] bg-white px-3 py-2 text-sm text-[#334149]'
+                className='block w-full rounded-lg border border-dashed border-semi-color-border bg-semi-color-bg-1 px-3 py-2 text-sm text-semi-color-text-1'
                 type='file'
                 accept={DRAW_IMAGE_ACCEPT}
                 multiple
@@ -1124,7 +1124,7 @@ const Draw = () => {
                   {sourceImages.map((image, index) => (
                     <div
                       key={`${image.name}-${index}`}
-                      className='flex items-center justify-between rounded-lg border border-[#e1e8ec] bg-white px-3 py-2 text-xs'
+                      className='flex items-center justify-between rounded-lg border border-semi-color-border bg-semi-color-bg-1 px-3 py-2 text-xs text-semi-color-text-1'
                     >
                       <span className='truncate'>{image.name}</span>
                       <Button
@@ -1146,8 +1146,8 @@ const Draw = () => {
           )}
 
           <div className='grid grid-cols-2 gap-3'>
-            <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
-              <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('尺寸')}</Text>
+            <div className='rounded-lg border border-semi-color-border bg-semi-color-fill-0 p-3'>
+              <Text className='mb-2 block text-sm font-semibold text-semi-color-text-0'>{t('尺寸')}</Text>
               <Select
                 value={size}
                 onChange={setSize}
@@ -1155,8 +1155,8 @@ const Draw = () => {
                 style={{ width: '100%' }}
               />
             </div>
-            <div className='rounded-lg border border-[#e3e9ed] bg-[#fafcfc] p-3'>
-              <Text className='mb-2 block text-sm font-semibold text-[#27343b]'>{t('质量')}</Text>
+            <div className='rounded-lg border border-semi-color-border bg-semi-color-fill-0 p-3'>
+              <Text className='mb-2 block text-sm font-semibold text-semi-color-text-0'>{t('质量')}</Text>
               <Select
                 value={quality}
                 onChange={setQuality}
@@ -1172,7 +1172,7 @@ const Draw = () => {
           </div>
         </div>
 
-          <div className='border-t border-[#edf1f3] bg-white px-5 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.05)]'>
+          <div className='border-t border-semi-color-border bg-semi-color-bg-1 px-5 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.05)]'>
             <Button
               theme='solid'
               type='primary'
@@ -1200,16 +1200,16 @@ const Draw = () => {
       </Card>
 
       <Card
-        className='relative min-h-0 overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm'
+        className='relative min-h-0 overflow-hidden rounded-xl border border-semi-color-border bg-semi-color-bg-1 shadow-sm'
         bodyStyle={{ height: '100%', padding: 20 }}
       >
         <div className='flex h-full min-h-0 flex-col'>
-          <div className='mb-4 border-b border-[#edf1f3] pb-4 pr-14'>
+          <div className='mb-4 border-b border-semi-color-border pb-4 pr-14'>
             <div>
-              <Title heading={5} className='mb-1 text-[#1f2a30]'>
+              <Title heading={5} className='mb-1 text-semi-color-text-0'>
                 {t('生成预览')}
               </Title>
-              <Text className='text-[#6b7a83]'>
+              <Text className='text-semi-color-text-2'>
                 {t('最多同时生成3张图片')}
               </Text>
             </div>
@@ -1217,7 +1217,7 @@ const Draw = () => {
 
           <div ref={historyButtonRef} className='absolute right-5 top-5'>
             <Button
-              className='rounded-full border border-[#cfe3df] bg-white px-3 py-2 text-[#111827] shadow-sm'
+              className='rounded-full border border-semi-color-border bg-semi-color-bg-1 px-3 py-2 text-semi-color-text-0 shadow-sm'
               icon={<History size={18} />}
               onClick={() => setHistoryPanelOpen((open) => !open)}
             >
@@ -1228,11 +1228,10 @@ const Draw = () => {
           {historyPanelOpen && (
             <div
               ref={historyPanelRef}
-              className='absolute right-5 top-20 z-50 w-[32rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-[#d9e2e7] bg-white p-3 text-[#111827] shadow-xl'
-              style={{ backgroundColor: '#ffffff', color: '#111827' }}
+              className='absolute right-5 top-20 z-50 w-[32rem] max-w-[calc(100%-2.5rem)] rounded-xl border border-semi-color-border bg-semi-color-bg-2 p-3 text-semi-color-text-0 shadow-xl'
             >
               <div className='mb-1 flex items-center justify-between'>
-                <Text strong className='text-[#111827]'>{t('历史记录')}</Text>
+                <Text strong className='text-semi-color-text-0'>{t('历史记录')}</Text>
                 <Button
                   size='small'
                   type='tertiary'
@@ -1244,11 +1243,11 @@ const Draw = () => {
                   {t('清空历史')}
                 </Button>
               </div>
-              <Text className='mb-3 block text-xs text-[#111827]'>
+              <Text className='mb-3 block text-xs text-semi-color-text-2'>
                 {t('历史记录只保存最近10张图片，多余图片会自动删除')}
               </Text>
               {history.length === 0 ? (
-                <div className='rounded-lg border border-dashed border-[#c7d2d8] bg-white p-3 text-center'>
+                <div className='rounded-lg border border-dashed border-semi-color-border bg-semi-color-bg-1 p-3 text-center'>
                   <Text type='tertiary'>{t('暂无保存图片')}</Text>
                 </div>
               ) : (
@@ -1257,11 +1256,11 @@ const Draw = () => {
                     const thumbnailSrc = getHistoryThumbnailSource(record, 0);
                     const src = getImageSource(record.images?.[0]);
                     return (
-                      <div key={record.id} className='rounded-lg border border-[#e1e8ec] bg-white p-2 transition-colors hover:border-[#8fcac0] hover:bg-[#f5fbfa]'>
+                      <div key={record.id} className='rounded-lg border border-semi-color-border bg-semi-color-bg-1 p-2 transition-colors hover:border-semi-color-primary hover:bg-semi-color-fill-0'>
                         <div className='flex gap-2'>
                           <button
                             type='button'
-                            className='size-14 shrink-0 overflow-hidden rounded-lg border border-[#d7e0e5] bg-gray-50'
+                            className='size-14 shrink-0 overflow-hidden rounded-lg border border-semi-color-border bg-semi-color-fill-0'
                             onClick={() => handleOpenHistoryRecord(record)}
                           >
                             {thumbnailSrc ? (
@@ -1272,10 +1271,10 @@ const Draw = () => {
                           </button>
                           <button
                             type='button'
-                            className='min-w-0 flex-1 text-left text-xs text-[#111827]'
+                            className='min-w-0 flex-1 text-left text-xs text-semi-color-text-0'
                             onClick={() => handleOpenHistoryRecord(record)}
                           >
-                            <div className='mb-1 text-[11px] text-[#111827]'>
+                            <div className='mb-1 text-[11px] text-semi-color-text-2'>
                               {record.mode === 'edit' ? t('图生图') : t('文生图')}
                               {' · '}
                               {new Date(record.createdAt).toLocaleString()}
@@ -1312,19 +1311,19 @@ const Draw = () => {
             </div>
           )}
 
-          <div className='min-h-0 flex-1 overflow-y-auto rounded-xl bg-[#f7fafb] p-4'>
+          <div className='min-h-0 flex-1 overflow-y-auto rounded-xl bg-semi-color-fill-0 p-4'>
             {error && (
-              <div className='mb-3 rounded-lg border border-red-200 bg-red-50 p-3'>
+              <div className='mb-3 rounded-lg border border-semi-color-danger-light-active bg-semi-color-danger-light-default p-3'>
                 <Text type='danger'>{error}</Text>
               </div>
             )}
 
             {generationItems.length === 0 && (
-              <div className='flex h-full min-h-[28rem] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#c9d5dc] bg-white text-gray-400'>
-                <div className='rounded-full bg-[#eef3f5] p-4'>
+              <div className='flex h-full min-h-[28rem] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-semi-color-border bg-semi-color-bg-1 text-semi-color-text-2'>
+                <div className='rounded-full bg-semi-color-fill-1 p-4'>
                   <ImageIcon size={56} strokeWidth={1} />
                 </div>
-                <Text className='text-[#7b8991]'>{t('生成的图片将显示在这里')}</Text>
+                <Text className='text-semi-color-text-2'>{t('生成的图片将显示在这里')}</Text>
               </div>
             )}
 
@@ -1335,27 +1334,27 @@ const Draw = () => {
                   return (
                     <div
                       key={item.id}
-                      className={`${previewItemClass} group relative overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm transition-shadow hover:shadow-md`}
+                      className={`${previewItemClass} group relative overflow-hidden rounded-xl border border-semi-color-border bg-semi-color-bg-1 shadow-sm transition-shadow hover:shadow-md`}
                     >
                       <Button
                         size='small'
                         type='tertiary'
-                        className='absolute right-3 top-3 z-10 rounded-full bg-white/90 shadow-sm'
+                        className='absolute right-3 top-3 z-10 rounded-full bg-semi-color-bg-1/90 shadow-sm'
                         icon={<X size={14} />}
                         onClick={() => handleHideGenerationItem(item.id)}
                       />
 
                       {item.status === 'loading' && (
-                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-3 bg-[#f4f8f9] px-4 text-center'>
+                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-3 bg-semi-color-fill-0 px-4 text-center'>
                           <Spin size='large' />
-                          <Text className='text-[#6b7a83]'>
+                          <Text className='text-semi-color-text-2'>
                             {t('生成图片时间约为1-2分钟请耐心等待')}
                           </Text>
                         </div>
                       )}
 
                       {item.status === 'error' && (
-                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-2 bg-red-50 px-4 text-center'>
+                        <div className='flex aspect-square min-h-[18rem] flex-col items-center justify-center gap-2 bg-semi-color-danger-light-default px-4 text-center'>
                           <Text type='danger'>{item.error || t('生成失败')}</Text>
                         </div>
                       )}
@@ -1379,8 +1378,8 @@ const Draw = () => {
                             </Button>
                           </div>
                           {item.prompt && (
-                            <div className='border-t border-[#edf1f3] bg-white p-3'>
-                              <Text size='small' className='text-[#5d6b73]'>
+                            <div className='border-t border-semi-color-border bg-semi-color-bg-1 p-3'>
+                              <Text size='small' className='text-semi-color-text-2'>
                                 {item.prompt}
                               </Text>
                             </div>
@@ -1401,13 +1400,11 @@ const Draw = () => {
       visible={Boolean(imagePreviewRecord)}
       footer={null}
       width={960}
-      contentStyle={{ backgroundColor: '#ffffff' }}
-      bodyStyle={{ background: '#ffffff', color: '#111827' }}
       onCancel={() => setImagePreviewRecord(null)}
     >
       {imagePreviewRecord && (
         <div className='flex flex-col gap-4'>
-          <div className='rounded-lg border border-[#e3e9ed] bg-white px-3 py-2 text-xs text-[#6b7a83]'>
+          <div className='rounded-lg border border-semi-color-border bg-semi-color-fill-0 px-3 py-2 text-xs text-semi-color-text-2'>
             {imagePreviewRecord.mode === 'edit' ? t('图生图') : t('文生图')}
             {' · '}
             {new Date(imagePreviewRecord.createdAt).toLocaleString()}
@@ -1418,7 +1415,7 @@ const Draw = () => {
               return (
                 <div
                   key={item.id}
-                  className={`${imagePreviewItemClass} overflow-hidden rounded-xl border border-[#d9e2e7] bg-white shadow-sm`}
+                  className={`${imagePreviewItemClass} overflow-hidden rounded-xl border border-semi-color-border bg-semi-color-bg-1 shadow-sm`}
                 >
                   {src ? (
                     <img
@@ -1427,12 +1424,12 @@ const Draw = () => {
                       className='w-full object-contain'
                     />
                   ) : (
-                    <div className='flex aspect-square min-h-[16rem] items-center justify-center bg-[#f4f8f9]'>
+                    <div className='flex aspect-square min-h-[16rem] items-center justify-center bg-semi-color-fill-0'>
                       <ImageIcon size={48} strokeWidth={1} />
                     </div>
                   )}
-                  <div className='flex items-start justify-between gap-3 border-t border-[#edf1f3] bg-white p-3'>
-                    <Text size='small' className='min-w-0 flex-1 text-[#5d6b73]'>
+                  <div className='flex items-start justify-between gap-3 border-t border-semi-color-border bg-semi-color-bg-1 p-3'>
+                    <Text size='small' className='min-w-0 flex-1 text-semi-color-text-2'>
                       {item.prompt}
                     </Text>
                     <div className='flex shrink-0 flex-wrap justify-end gap-2'>

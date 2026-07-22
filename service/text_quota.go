@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -55,6 +56,47 @@ type textQuotaSummary struct {
 	ImageGenerationCallPrice float64
 	ToolCallSurchargeQuota   decimal.Decimal
 	ClaudeCacheBillingHidden bool
+}
+
+// claudeMaxContextTokens 是 Claude(anthropic)请求计费时允许的最大输入上下文
+// (prompt + cache read + cache write)。超过时按比例缩小各输入分项,使计费上下文恰好
+// 等于该上限。此值按需求写死为 100 万。
+const claudeMaxContextTokens = 1000000
+
+// capClaudeContextTokens 对 Claude(anthropic 语义)请求的输入上下文做封顶。
+// 输入上下文 = prompt tokens + cache read + cache write。当其总和超过
+// claudeMaxContextTokens 时,所有输入分项(含 cache read / cache write 拆分、
+// image / audio 输入)按同一比例等比缩小,并把取整余数吸收进 prompt tokens,
+// 使计费上下文总和恰好落在上限。completion(输出)tokens 不受影响。
+//
+// 注意:该封顶作用于标准计费路径(calculateTextQuotaSummary),对基于
+// billingexpr 的分层计费(TryTieredSettle)不生效——后者直接使用原始 usage。
+func capClaudeContextTokens(summary *textQuotaSummary) {
+	cacheWrite := cacheWriteTokensTotal(*summary)
+	total := summary.PromptTokens + summary.CacheTokens + cacheWrite
+	if total <= claudeMaxContextTokens {
+		return
+	}
+	factor := float64(claudeMaxContextTokens) / float64(total)
+	scale := func(v int) int {
+		if v <= 0 {
+			return v
+		}
+		return int(math.Round(float64(v) * factor))
+	}
+	summary.CacheTokens = scale(summary.CacheTokens)
+	summary.CacheCreationTokens = scale(summary.CacheCreationTokens)
+	summary.CacheCreationTokens5m = scale(summary.CacheCreationTokens5m)
+	summary.CacheCreationTokens1h = scale(summary.CacheCreationTokens1h)
+	summary.ImageTokens = scale(summary.ImageTokens)
+	summary.AudioTokens = scale(summary.AudioTokens)
+	// 把取整余数吸收进 prompt tokens,保证计费上下文总和恰好等于上限。
+	newCacheWrite := cacheWriteTokensTotal(*summary)
+	summary.PromptTokens = claudeMaxContextTokens - summary.CacheTokens - newCacheWrite
+	if summary.PromptTokens < 0 {
+		summary.PromptTokens = 0
+	}
+	summary.TotalTokens = summary.PromptTokens + summary.CompletionTokens
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -265,6 +307,11 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	if ShouldHideClaudeCacheBilling(relayInfo, summary.UsageSemantic) {
 		hideClaudeCacheBilling(&summary)
+	}
+
+	// Claude 请求输入上下文封顶:超过 100 万 token 时等比缩小各输入分项。
+	if summary.IsClaudeUsageSemantic {
+		capClaudeContextTokens(&summary)
 	}
 
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
